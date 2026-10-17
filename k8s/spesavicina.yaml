@@ -235,7 +235,7 @@ spec:
             - { name: OCR_CACHE_DIR, value: /data }
             - { name: OCR_WORK_DIR, value: /tmp/ocr }
             - { name: OCR_LANGUAGES, value: ita+eng }
-            - { name: OCR_DPI, value: "200" }
+            - { name: OCR_DPI, value: "150" }
             - { name: OCR_MAX_PAGES, value: "48" }
             - { name: OCR_PAGE_CONCURRENCY, value: "2" }
           volumeMounts:
