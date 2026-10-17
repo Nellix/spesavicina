@@ -77,7 +77,7 @@ async function runIngestion(store = null) {
                 FLYER_STORE_ID: store?.id ?? process.env[`${RETAILER.toUpperCase()}_STORE_ID`] ?? RETAILER,
               };
   env.OCR_URL = process.env.OCR_URL ?? "";
-  env.OCR_REQUEST_TIMEOUT_MS = process.env.OCR_REQUEST_TIMEOUT_MS ?? "300000";
+  env.OCR_REQUEST_TIMEOUT_MS = process.env.OCR_REQUEST_TIMEOUT_MS ?? "900000";
   env.SERVICE_TOKEN = SERVICE_TOKEN;
   let result;
   if (!sourceUrl) {

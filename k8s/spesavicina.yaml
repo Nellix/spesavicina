@@ -78,7 +78,8 @@ data:
   CRAI_INGESTOR_URL: http://crai-ingestor
   MERCATO_INGESTOR_URL: http://mercato-ingestor
   OCR_URL: http://ocr-worker
-  OCR_REQUEST_TIMEOUT_MS: "300000"
+  OCR_REQUEST_TIMEOUT_MS: "900000"
+  STORE_ANALYSIS_TIMEOUT_MS: "960000"
   OVERPASS_URL: https://overpass-api.de/api/interpreter
   NOMINATIM_URL: https://nominatim.openstreetmap.org
   ESSELUNGA_PROMOTIONS_URL: https://www.esselunga.it/it-it/promozioni/volantini.esselunga-di-torino-porta-nuova.top.html
@@ -234,8 +235,8 @@ spec:
               valueFrom: { secretKeyRef: { name: spesavicina-service-secrets, key: SERVICE_TOKEN } }
             - { name: OCR_CACHE_DIR, value: /data }
             - { name: OCR_WORK_DIR, value: /tmp/ocr }
-            - { name: OCR_LANGUAGES, value: ita+eng }
-            - { name: OCR_DPI, value: "150" }
+            - { name: OCR_LANGUAGES, value: ita }
+            - { name: OCR_DPI, value: "120" }
             - { name: OCR_MAX_PAGES, value: "48" }
             - { name: OCR_PAGE_CONCURRENCY, value: "2" }
           volumeMounts:

@@ -627,7 +627,7 @@ async function ocrPdf(buffer, env = process.env) {
         "content-type": "application/pdf",
       },
       body: buffer,
-      signal: AbortSignal.timeout(Number(env.OCR_REQUEST_TIMEOUT_MS ?? 300_000)),
+      signal: AbortSignal.timeout(Number(env.OCR_REQUEST_TIMEOUT_MS ?? 900_000)),
     });
     if (response.status === 429) {
       lastError = new Error("OCR worker is busy");

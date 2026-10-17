@@ -127,7 +127,7 @@ async function analyzeStore(event) {
     });
     return 0;
   }
-  const analysisTimeoutMs = Number(process.env.STORE_ANALYSIS_TIMEOUT_MS ?? 360_000);
+  const analysisTimeoutMs = Number(process.env.STORE_ANALYSIS_TIMEOUT_MS ?? 960_000);
   const response = await fetch(`${INGESTORS[collector]}/analyze`, { method: "POST", headers: { authorization: `Bearer ${SERVICE_TOKEN}`, "content-type": "application/json" }, body: JSON.stringify({ store: { id: store.id, retailer: store.retailer, name: store.name, address: store.address, sourceUrl: store.source_url } }), signal: AbortSignal.timeout(analysisTimeoutMs) });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(result.error ?? `${collector} collector returned ${response.status}`);
