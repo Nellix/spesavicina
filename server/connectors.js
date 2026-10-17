@@ -147,6 +147,9 @@ const KNOWN_BRANDS = [
   "Nutella", "Pizzoli", "Grand Krust", "Cameo", "Peroni", "Cavit", "Cesarini Sforza", "Lagaria",
   "Fresh & Clean", "Tognana", "Omino Bianco", "BeTotal", "Ultima", "Ferrarini", "Lustenberger & Durst",
   "Alival", "Igor", "Harbour", "Oatly", "Mandara", "Müller", "Orogel", "Buitoni", "Costa d'Oro", "Rizzoli",
+  "Crai", "Vicenzi", "Twix", "Mars", "Snickers", "Haribo", "Fini", "Paneangeli", "Caputo", "Lindt",
+  "Rigoni di Asiago", "Balocco", "Loacker", "San Carlo", "Pernigotti", "Ace", "Vileda", "Pedigree",
+  "Morando", "Purina", "Whiskas", "Gourmet",
 ];
 
 const STRUCTURED_BRAND_PREFIXES = [
@@ -635,7 +638,7 @@ async function ocrPdf(buffer, env = process.env) {
       continue;
     }
     const result = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(`OCR worker failed: ${result.error ?? response.status}`);
+    if (!response.ok || result.error) throw new Error(`OCR worker failed: ${result.error ?? response.status}`);
     return result;
   }
   throw lastError ?? new Error("OCR worker did not accept the flyer");

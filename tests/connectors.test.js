@@ -132,3 +132,10 @@ test("Mercatò structured store data resolves flyer and product text", () => {
   assert.equal(lavazza.price, 5.49);
   assert.equal(lavazza.validUntil, "2026-10-21");
 });
+
+test("official flyer text recognizes retailer private-label products", () => {
+  const offers = parseOfficialFlyerText("CRAI Minestrone 15 verdure 450 g 1,69 €", "crai", "store-crai", "https://example.test/crai.pdf");
+  assert.equal(offers.length, 1);
+  assert.equal(offers[0].brand, "Crai");
+  assert.equal(offers[0].price, 1.69);
+});

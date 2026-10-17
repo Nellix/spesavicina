@@ -136,12 +136,22 @@ const server = createServer(async (request, response) => {
     if (status.busy) return json(response, 429, { error: "OCR worker is busy", retryAfterSeconds: 30 });
     const buffer = await pdfBody(request);
     status.busy = true;
+    response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+    response.write(" ");
+    const heartbeat = setInterval(() => {
+      if (!response.destroyed) response.write(" ");
+    }, 15_000);
     try {
       const result = await recognize(buffer);
       status.runs += 1;
       status.lastRunAt = new Date().toISOString();
-      return json(response, 200, result);
+      return response.end(JSON.stringify(result));
+    } catch (error) {
+      status.errors += 1;
+      console.error(JSON.stringify({ level: "error", service: "ocr-worker", message: error.message }));
+      return response.end(JSON.stringify({ error: error.message }));
     } finally {
+      clearInterval(heartbeat);
       status.busy = false;
     }
   } catch (error) {
