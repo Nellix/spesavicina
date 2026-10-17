@@ -1,0 +1,40 @@
+{
+  "name": "spesavicina",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Production service foundation for nearby exact-product grocery offer alerts",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Nellix/spesavicina.git"
+  },
+  "homepage": "https://github.com/Nellix/spesavicina#readme",
+  "bugs": {
+    "url": "https://github.com/Nellix/spesavicina/issues"
+  },
+  "keywords": ["groceries", "price-comparison", "offers", "ocr", "kubernetes", "open-source"],
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "dev": "node --watch src/api.js",
+    "start": "node dist/api.mjs",
+    "start:matcher": "node dist/matcher.mjs",
+    "start:notifier": "node dist/notifier.mjs",
+    "start:store-analysis": "node dist/store-analysis.mjs",
+    "start:ingestor": "node dist/ingestor.mjs",
+    "start:ocr": "node dist/ocr.mjs",
+    "build": "node scripts/build.js",
+    "test": "node --test tests/*.test.js",
+    "lint": "node --check src/api.js && node --check src/auth.js && node --check src/db.js && node --check src/repository.js && node --check src/workers/matcher.js && node --check src/workers/notifier.js && node --check src/workers/store-analysis.js && node --check src/ingestors/service.js && node --check src/ocr/service.js && node --check public/app.js"
+  },
+  "dependencies": {
+    "jose": "^6.2.12",
+    "pg": "^8.16.3",
+    "unpdf": "^1.9.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.10"
+  }
+}

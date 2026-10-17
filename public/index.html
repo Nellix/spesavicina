@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#18392b" />
+    <meta name="description" content="Exact-product grocery offer alerts for stores near you." />
+    <meta property="og:title" content="SpesaVicina — only the offers you actually want" />
+    <meta property="og:description" content="Track one clean product record and get alerted when a nearby offer is genuinely worth the trip." />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="https://spesavicina.example.com/og.jpg" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="https://spesavicina.example.com/og.jpg" />
+    <link rel="icon" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="stylesheet" href="/styles.css?v=20260922-auth1" />
+    <title>SpesaVicina — nearby offers worth the trip</title>
+  </head>
+  <body>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <section id="auth-shell" class="auth-shell" hidden>
+      <div class="auth-copy">
+        <a class="auth-logo" href="/"><span class="brand-mark">SV</span><span>SpesaVicina</span></a>
+        <span class="auth-kicker">Groceries, without the guesswork</span>
+        <h1>Buy what you love.<br /><em>Pay less for it.</em></h1>
+        <p>Tell us the exact products you buy. We’ll watch nearby retailers and alert you only when an offer is genuinely useful.</p>
+        <div class="auth-trust"><span>✓ Exact products</span><span>✓ Your private watchlist</span><span>✓ No advertising noise</span></div>
+      </div>
+      <div class="auth-panel">
+        <div class="login-card">
+          <div class="auth-tabs" role="tablist" aria-label="Account access">
+            <button type="button" role="tab" data-auth-mode="login" aria-selected="true">Sign in</button>
+            <button type="button" role="tab" data-auth-mode="register" aria-selected="false">Create account</button>
+          </div>
+          <form id="login-form" class="auth-form">
+            <span class="step-label">Welcome back</span><h2>Sign in to your savings</h2><p>Your products, stores and alerts stay private to your account.</p>
+            <label>Email<input name="email" type="email" autocomplete="email" required /></label>
+            <label>Password<input name="password" type="password" autocomplete="current-password" required /></label>
+            <button class="button primary wide" type="submit">Sign in</button>
+          </form>
+          <form id="register-form" class="auth-form" hidden>
+            <span class="step-label">Your personal watchlist</span><h2>Create your account</h2><p>Start fresh with your own location, supermarkets, tracked products and alerts.</p>
+            <label>Name<input name="name" autocomplete="name" minlength="2" maxlength="100" required /></label>
+            <label>Email<input name="email" type="email" autocomplete="email" required /></label>
+            <label>Password<input name="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required /><small>Use at least 12 characters.</small></label>
+            <button class="button primary wide" type="submit">Create account</button>
+          </form>
+          <div class="auth-divider"><span>or</span></div>
+          <a id="google-signin" class="google-button" href="/api/auth/google/start" hidden><span>G</span>Continue with Google</a>
+          <p id="google-unavailable" class="fine-print">Google sign-in will appear after its OAuth credentials are configured.</p>
+          <p class="auth-privacy">Your session stays in a secure, HTTP-only cookie. We never share your watchlist between accounts.</p>
+        </div>
+      </div>
+    </section>
+
+    <div id="app" class="app-shell" hidden>
+      <aside class="sidebar">
+        <a class="logo" href="#home"><span class="brand-mark">SV</span><span>SpesaVicina</span></a>
+        <nav class="side-nav" aria-label="Primary">
+          <a href="#home" data-route="home"><i>⌂</i> Overview</a>
+          <a href="#watchlist" data-route="watchlist"><i>◎</i> My products</a>
+          <a href="#stores" data-route="stores"><i>⌖</i> Nearby stores</a>
+          <a href="#offers" data-route="offers"><i>◇</i> Offer feed</a>
+          <a href="#settings" data-route="settings"><i>⚙</i> Settings</a>
+          <a href="#admin" data-route="admin" id="admin-nav"><i>↻</i> Data review</a>
+        </nav>
+        <div class="sidebar-note"><span class="live-dot"></span><div><b>Sources monitored</b><small>Carrefour · Coop · Conad · Lidl · Mercatò + nearby chains</small></div></div>
+        <button class="profile-chip" data-route-button="settings"><span id="profile-initials">N</span><span><b id="profile-name">Nello</b><small id="profile-email">demo</small></span><i>›</i></button>
+      </aside>
+      <div class="page-column">
+        <header class="topbar">
+          <a class="mobile-logo" href="#home"><span class="brand-mark">SV</span><span>SpesaVicina</span></a>
+          <div class="location-pill"><span>⌖</span><span><small>Shopping around</small><b id="location-label">Corso Belgio 74, Torino</b></span></div>
+          <button class="icon-button" data-route-button="offers" aria-label="Open alerts">♟<span id="alert-count">0</span></button>
+        </header>
+        <main id="content" tabindex="-1"></main>
+      </div>
+      <nav class="bottom-nav" aria-label="Mobile navigation">
+        <a href="#home" data-route="home"><i>⌂</i><span>Home</span></a>
+        <a href="#watchlist" data-route="watchlist"><i>◎</i><span>Products</span></a>
+        <button class="add-fab" data-action="open-add" aria-label="Add product">+</button>
+        <a href="#stores" data-route="stores"><i>⌖</i><span>Stores</span></a>
+        <a href="#settings" data-route="settings"><i>⚙</i><span>Settings</span></a>
+      </nav>
+    </div>
+
+    <dialog id="add-dialog" class="dialog">
+      <form id="watch-form" method="dialog">
+        <button class="dialog-close" type="button" data-action="close-dialog" aria-label="Close">×</button>
+        <span class="eyebrow">One shared product catalogue</span>
+        <h2>What should we watch?</h2>
+        <p>Search every product collected by our retailers, including products whose last promotion has already ended. We’ll normalize punctuation, abbreviations and small spelling mistakes.</p>
+        <label class="catalogue-search">Search by brand, product or pack
+          <span class="search-box"><span>⌕</span><input id="product-search" role="combobox" aria-controls="product-results" aria-expanded="false" autocomplete="off" placeholder="Try “santanna nat 6x1.5”" /></span>
+        </label>
+        <input id="selected-product-id" name="productId" type="hidden" />
+        <div id="product-results" class="product-results" role="listbox" aria-label="Matching catalogue products"></div>
+        <div id="selected-product" class="selected-product" hidden></div>
+        <div class="catalogue-footer">
+          <span class="catalogue-proof"><i>✓</i><span><b>Canonical match</b><small>Everyone tracks the same clean product record</small></span></span>
+          <label>Minimum saving (€)<input name="minSaving" type="number" min="0" step="0.10" value="1.00" required /></label>
+        </div>
+        <div class="dialog-actions"><button class="button ghost" type="button" data-action="close-dialog">Cancel</button><button class="button primary" type="submit" value="default">Start watching</button></div>
+      </form>
+    </dialog>
+    <script src="/app.js?v=20260922-auth1" type="module"></script>
+  </body>
+</html>

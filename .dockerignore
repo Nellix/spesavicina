@@ -1,0 +1,7 @@
+.git
+data
+node_modules
+*.log
+.env*
+tests
+k8s

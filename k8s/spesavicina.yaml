@@ -1,0 +1,1025 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: grocery-offers
+  labels:
+    app.kubernetes.io/part-of: spesavicina
+---
+apiVersion: acid.zalan.do/v1
+kind: postgresql
+metadata:
+  name: spesavicina-postgres
+  namespace: grocery-offers
+  labels:
+    app.kubernetes.io/name: spesavicina-postgres
+    app.kubernetes.io/part-of: spesavicina
+spec:
+  teamId: spesavicina
+  numberOfInstances: 1
+  enableConnectionPooler: false
+  enableLogicalBackup: false
+  enableMasterLoadBalancer: false
+  enableReplicaLoadBalancer: false
+  users:
+    spesavicina_app:
+      - login
+  databases:
+    spesavicina: spesavicina_app
+  postgresql:
+    version: "16"
+    parameters:
+      max_connections: "60"
+      shared_buffers: 128MB
+      effective_cache_size: 384MB
+      log_min_duration_statement: "1000"
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: 750m, memory: 768Mi }
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values: [sh]
+  volume:
+    size: 5Gi
+    storageClass: local-path
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spesavicina-config
+  namespace: grocery-offers
+data:
+  BASE_URL: https://spesavicina.example.com
+  GOOGLE_REDIRECT_URI: https://spesavicina.example.com/api/auth/google/callback
+  PUBLIC_DIR: /app/public
+  PORT: "8080"
+  PGHOST: spesavicina-postgres
+  PGPORT: "5432"
+  PGDATABASE: spesavicina
+  PGUSER: spesavicina_app
+  PGSSLMODE: require
+  PGSSL_REJECT_UNAUTHORIZED: "false"
+  DB_POOL_SIZE: "8"
+  API_URL: http://spesavicina
+  INGESTOR_URLS: http://carrefour-ingestor/run,http://esselunga-ingestor/run,http://ekom-ingestor/run,http://coop-ingestor/run,http://lidl-ingestor/run
+  CARREFOUR_INGESTOR_URL: http://carrefour-ingestor
+  ESSELUNGA_INGESTOR_URL: http://esselunga-ingestor
+  EKOM_INGESTOR_URL: http://ekom-ingestor
+  COOP_INGESTOR_URL: http://coop-ingestor
+  LIDL_INGESTOR_URL: http://lidl-ingestor
+  INS_INGESTOR_URL: http://ins-ingestor
+  CONAD_INGESTOR_URL: http://conad-ingestor
+  MD_INGESTOR_URL: http://md-ingestor
+  PAM_INGESTOR_URL: http://pam-ingestor
+  BORELLO_INGESTOR_URL: http://borello-ingestor
+  CRAI_INGESTOR_URL: http://crai-ingestor
+  MERCATO_INGESTOR_URL: http://mercato-ingestor
+  OCR_URL: http://ocr-worker
+  OCR_REQUEST_TIMEOUT_MS: "300000"
+  OVERPASS_URL: https://overpass-api.de/api/interpreter
+  NOMINATIM_URL: https://nominatim.openstreetmap.org
+  ESSELUNGA_PROMOTIONS_URL: https://www.esselunga.it/it-it/promozioni/volantini.esselunga-di-torino-porta-nuova.top.html
+  ESSELUNGA_STORE_ID: esselunga-porta-nuova
+  CARREFOUR_FLYER_URL: https://www.carrefour.it/volantino/carrefour-express-torino-cso-belgio-62a/1278
+  CARREFOUR_STORE_ID: osm-node-5032076021
+  EKOM_API_URL: https://www.ekomdiscount.it/ebsn/api
+  EKOM_OFFERS_URL: https://www.ekomdiscount.it/leaflet
+  EKOM_STORE_ID: osm-way-305233831
+  EKOM_REGION: PIEMONTE
+  COOP_STORE_URL: https://www.coop.it/scegli-il-tuo-negozio/negozi-e-promozioni/1400/Coop-Torino-Belgio
+  COOP_STORE_ID: osm-way-116544601
+  LIDL_OFFERS_URL: https://www.lidl.it/c/c1150
+  LIDL_STORE_ID: osm-way-722678849
+  LIDL_REGION_ID: "41000"
+  INS_FLYER_URL: https://www.insmercato.it/volantino/
+  INS_STORE_ID: osm-node-9845350968
+  CONAD_FLYER_URL: https://www.conad.it/ricerca-negozi/conad-city-via-goito-5-10125-torino--010791
+  MD_FLYER_URL: https://www.mdspa.it/volantino/
+  PAM_FLYER_URL: https://www.pampanorama.it/volantino
+  BORELLO_FLYER_URL: https://borellosupermercati.it/volantino/
+  CRAI_FLYER_URL: https://crai.it/negozi-e-volantini/689-crai-extra-torino
+  MERCATO_FLYER_URL: https://www.mymercato.it/punti-vendita/piemonte/mercato-torino-via-filadelfia
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spesavicina
+  namespace: grocery-offers
+  labels:
+    app.kubernetes.io/name: spesavicina
+    app.kubernetes.io/component: web-api
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: spesavicina
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: spesavicina
+        app.kubernetes.io/component: web-api
+      annotations:
+        spesavicina.dev/revision: "20260921-retail-radius-2"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: api
+          image: node:22-bookworm-slim
+          imagePullPolicy: IfNotPresent
+          command: ["node", "/app/api.mjs"]
+          ports: [{ name: http, containerPort: 8080 }]
+          envFrom:
+            - configMapRef: { name: spesavicina-config }
+            - secretRef: { name: spesavicina-service-secrets }
+          env:
+            - name: SERVICE_NAME
+              value: web-api
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: spesavicina-app.spesavicina-postgres.credentials.postgresql.acid.zalan.do
+                  key: password
+          volumeMounts:
+            - { name: bundle, mountPath: /app/api.mjs, subPath: api.mjs, readOnly: true }
+            - { name: public, mountPath: /app/public, readOnly: true }
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+          resources:
+            requests: { cpu: 50m, memory: 96Mi }
+            limits: { cpu: 500m, memory: 384Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+      volumes:
+        - name: bundle
+          configMap: { name: spesavicina-api-bundle }
+        - name: public
+          configMap: { name: spesavicina-public }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spesavicina
+  namespace: grocery-offers
+spec:
+  selector:
+    app.kubernetes.io/name: spesavicina
+    app.kubernetes.io/component: web-api
+  ports: [{ name: http, port: 80, targetPort: http }]
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: spesavicina-ocr-cache
+  namespace: grocery-offers
+  labels: { app.kubernetes.io/name: ocr-worker, app.kubernetes.io/part-of: spesavicina }
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests: { storage: 1Gi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ocr-worker
+  namespace: grocery-offers
+  labels: { app.kubernetes.io/name: ocr-worker, app.kubernetes.io/part-of: spesavicina }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app.kubernetes.io/name: ocr-worker } }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: ocr-worker, app.kubernetes.io/part-of: spesavicina }
+      annotations: { spesavicina.dev/revision: "20261017-ocr-1" }
+    spec:
+      nodeSelector: { kubernetes.io/hostname: sh }
+      containers:
+        - name: ocr
+          image: node:22-bookworm-slim
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -ec
+            - >-
+              apt-get update &&
+              apt-get install -y --no-install-recommends poppler-utils tesseract-ocr tesseract-ocr-ita tesseract-ocr-eng util-linux &&
+              rm -rf /var/lib/apt/lists/* &&
+              gzip -dc /bundle/ocr.mjs.gz > /work/ocr.mjs &&
+              chown -R 1000:1000 /work /tmp/ocr /data &&
+              exec setpriv --reuid=1000 --regid=1000 --clear-groups node /work/ocr.mjs
+          ports: [{ name: http, containerPort: 8080 }]
+          envFrom: [{ configMapRef: { name: spesavicina-config } }]
+          env:
+            - name: SERVICE_TOKEN
+              valueFrom: { secretKeyRef: { name: spesavicina-service-secrets, key: SERVICE_TOKEN } }
+            - { name: OCR_CACHE_DIR, value: /data }
+            - { name: OCR_WORK_DIR, value: /tmp/ocr }
+            - { name: OCR_LANGUAGES, value: ita+eng }
+            - { name: OCR_DPI, value: "200" }
+            - { name: OCR_MAX_PAGES, value: "48" }
+            - { name: OCR_PAGE_CONCURRENCY, value: "2" }
+          volumeMounts:
+            - { name: bundle, mountPath: /bundle, readOnly: true }
+            - { name: runtime, mountPath: /work }
+            - { name: scratch, mountPath: /tmp/ocr }
+            - { name: cache, mountPath: /data }
+          startupProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 10, failureThreshold: 30, timeoutSeconds: 3 }
+          readinessProbe: { httpGet: { path: /readyz, port: http }, periodSeconds: 10, timeoutSeconds: 3 }
+          livenessProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 30, timeoutSeconds: 3 }
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: "2", memory: 1Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL], add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID] }
+      volumes:
+        - { name: bundle, configMap: { name: spesavicina-ocr-bundle } }
+        - { name: runtime, emptyDir: {} }
+        - { name: scratch, emptyDir: { sizeLimit: 1Gi } }
+        - { name: cache, persistentVolumeClaim: { claimName: spesavicina-ocr-cache } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: ocr-worker, namespace: grocery-offers }
+spec:
+  selector: { app.kubernetes.io/name: ocr-worker }
+  ports: [{ name: http, port: 80, targetPort: http }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: matching-worker
+  namespace: grocery-offers
+  labels: { app.kubernetes.io/name: matching-worker, app.kubernetes.io/part-of: spesavicina }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app.kubernetes.io/name: matching-worker } }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: matching-worker, app.kubernetes.io/part-of: spesavicina }
+      annotations: { spesavicina.dev/revision: "20260921-retail-radius-2" }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: worker
+          image: node:22-bookworm-slim
+          imagePullPolicy: IfNotPresent
+          command: ["node", "/app/matcher.mjs"]
+          ports: [{ name: http, containerPort: 8080 }]
+          envFrom:
+            - configMapRef: { name: spesavicina-config }
+            - secretRef: { name: spesavicina-service-secrets }
+          env:
+            - { name: SERVICE_NAME, value: matching-worker }
+            - name: PGPASSWORD
+              valueFrom: { secretKeyRef: { name: spesavicina-app.spesavicina-postgres.credentials.postgresql.acid.zalan.do, key: password } }
+          volumeMounts: [{ name: bundle, mountPath: /app/matcher.mjs, subPath: matcher.mjs, readOnly: true }]
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+          resources:
+            requests: { cpu: 20m, memory: 64Mi }
+            limits: { cpu: 300m, memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+      volumes: [{ name: bundle, configMap: { name: spesavicina-matcher-bundle } }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-worker
+  namespace: grocery-offers
+  labels: { app.kubernetes.io/name: notification-worker, app.kubernetes.io/part-of: spesavicina }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app.kubernetes.io/name: notification-worker } }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: notification-worker, app.kubernetes.io/part-of: spesavicina }
+      annotations: { spesavicina.dev/revision: "20260921-retail-radius-2" }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: worker
+          image: node:22-bookworm-slim
+          imagePullPolicy: IfNotPresent
+          command: ["node", "/app/notifier.mjs"]
+          ports: [{ name: http, containerPort: 8080 }]
+          envFrom:
+            - configMapRef: { name: spesavicina-config }
+            - secretRef: { name: spesavicina-service-secrets }
+          env:
+            - { name: SERVICE_NAME, value: notification-worker }
+            - name: PGPASSWORD
+              valueFrom: { secretKeyRef: { name: spesavicina-app.spesavicina-postgres.credentials.postgresql.acid.zalan.do, key: password } }
+          volumeMounts: [{ name: bundle, mountPath: /app/notifier.mjs, subPath: notifier.mjs, readOnly: true }]
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+          resources:
+            requests: { cpu: 20m, memory: 64Mi }
+            limits: { cpu: 300m, memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+      volumes: [{ name: bundle, configMap: { name: spesavicina-notifier-bundle } }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: store-analysis-worker
+  namespace: grocery-offers
+  labels: { app.kubernetes.io/name: store-analysis-worker, app.kubernetes.io/part-of: spesavicina }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app.kubernetes.io/name: store-analysis-worker } }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: store-analysis-worker, app.kubernetes.io/part-of: spesavicina }
+      annotations: { spesavicina.dev/revision: "20260921-retail-radius-2" }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: worker
+          image: node:22-bookworm-slim
+          imagePullPolicy: IfNotPresent
+          command: ["node", "/app/store-analysis.mjs"]
+          ports: [{ name: http, containerPort: 8080 }]
+          envFrom:
+            - configMapRef: { name: spesavicina-config }
+            - secretRef: { name: spesavicina-service-secrets }
+          env:
+            - { name: SERVICE_NAME, value: store-analysis-worker }
+            - name: PGPASSWORD
+              valueFrom: { secretKeyRef: { name: spesavicina-app.spesavicina-postgres.credentials.postgresql.acid.zalan.do, key: password } }
+          volumeMounts: [{ name: bundle, mountPath: /app/store-analysis.mjs, subPath: store-analysis.mjs, readOnly: true }]
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+          resources:
+            requests: { cpu: 20m, memory: 64Mi }
+            limits: { cpu: 400m, memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+      volumes: [{ name: bundle, configMap: { name: spesavicina-store-analysis-bundle } }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: carrefour-ingestor
+  namespace: grocery-offers
+  labels: { app.kubernetes.io/name: carrefour-ingestor, app.kubernetes.io/part-of: spesavicina }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app.kubernetes.io/name: carrefour-ingestor } }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: carrefour-ingestor, app.kubernetes.io/part-of: spesavicina }
+      annotations: { spesavicina.dev/revision: "20260921-retail-radius-2" }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: ingestor
+          image: node:22-bookworm-slim
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c", "gzip -dc /bundle/ingestor.mjs.gz > /work/ingestor.mjs && exec node /work/ingestor.mjs"]
+          ports: [{ name: http, containerPort: 8080 }]
+          envFrom:
+            - configMapRef: { name: spesavicina-config }
+            - secretRef: { name: spesavicina-service-secrets }
+          env: [{ name: RETAILER, value: carrefour }]
+          volumeMounts: [{ name: bundle, mountPath: /bundle, readOnly: true }, { name: runtime, mountPath: /work }]
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+          resources:
+            requests: { cpu: 20m, memory: 48Mi }
+            limits: { cpu: 300m, memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+      volumes: [{ name: bundle, configMap: { name: spesavicina-ingestor-bundle } }, { name: runtime, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: carrefour-ingestor, namespace: grocery-offers }
+spec:
+  selector: { app.kubernetes.io/name: carrefour-ingestor }
+  ports: [{ name: http, port: 80, targetPort: http }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: esselunga-ingestor
+  namespace: grocery-offers
+  labels: { app.kubernetes.io/name: esselunga-ingestor, app.kubernetes.io/part-of: spesavicina }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app.kubernetes.io/name: esselunga-ingestor } }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: esselunga-ingestor, app.kubernetes.io/part-of: spesavicina }
+      annotations: { spesavicina.dev/revision: "20260921-retail-radius-2" }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: ingestor
+          image: node:22-bookworm-slim
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c", "gzip -dc /bundle/ingestor.mjs.gz > /work/ingestor.mjs && exec node /work/ingestor.mjs"]
+          ports: [{ name: http, containerPort: 8080 }]
+          envFrom:
+            - configMapRef: { name: spesavicina-config }
+            - secretRef: { name: spesavicina-service-secrets }
+          env: [{ name: RETAILER, value: esselunga }]
+          volumeMounts: [{ name: bundle, mountPath: /bundle, readOnly: true }, { name: runtime, mountPath: /work }]
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+          resources:
+            requests: { cpu: 20m, memory: 48Mi }
+            limits: { cpu: 300m, memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+      volumes: [{ name: bundle, configMap: { name: spesavicina-ingestor-bundle } }, { name: runtime, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: esselunga-ingestor, namespace: grocery-offers }
+spec:
+  selector: { app.kubernetes.io/name: esselunga-ingestor }
+  ports: [{ name: http, port: 80, targetPort: http }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ekom-ingestor
+  namespace: grocery-offers
+  labels: { app.kubernetes.io/name: ekom-ingestor, app.kubernetes.io/part-of: spesavicina }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app.kubernetes.io/name: ekom-ingestor } }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: ekom-ingestor, app.kubernetes.io/part-of: spesavicina }
+      annotations: { spesavicina.dev/revision: "20260921-retail-radius-2" }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: ingestor
+          image: node:22-bookworm-slim
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c", "gzip -dc /bundle/ingestor.mjs.gz > /work/ingestor.mjs && exec node /work/ingestor.mjs"]
+          ports: [{ name: http, containerPort: 8080 }]
+          envFrom:
+            - configMapRef: { name: spesavicina-config }
+            - secretRef: { name: spesavicina-service-secrets }
+          env: [{ name: RETAILER, value: ekom }]
+          volumeMounts: [{ name: bundle, mountPath: /bundle, readOnly: true }, { name: runtime, mountPath: /work }]
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+          resources:
+            requests: { cpu: 20m, memory: 48Mi }
+            limits: { cpu: 300m, memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+      volumes: [{ name: bundle, configMap: { name: spesavicina-ingestor-bundle } }, { name: runtime, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: ekom-ingestor, namespace: grocery-offers }
+spec:
+  selector: { app.kubernetes.io/name: ekom-ingestor }
+  ports: [{ name: http, port: 80, targetPort: http }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coop-ingestor
+  namespace: grocery-offers
+  labels: { app.kubernetes.io/name: coop-ingestor, app.kubernetes.io/part-of: spesavicina }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app.kubernetes.io/name: coop-ingestor } }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: coop-ingestor, app.kubernetes.io/part-of: spesavicina }
+      annotations: { spesavicina.dev/revision: "20260921-coop-1" }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: ingestor
+          image: node:22-bookworm-slim
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c", "gzip -dc /bundle/ingestor.mjs.gz > /work/ingestor.mjs && exec node /work/ingestor.mjs"]
+          ports: [{ name: http, containerPort: 8080 }]
+          envFrom:
+            - configMapRef: { name: spesavicina-config }
+            - secretRef: { name: spesavicina-service-secrets }
+          env: [{ name: RETAILER, value: coop }]
+          volumeMounts: [{ name: bundle, mountPath: /bundle, readOnly: true }, { name: runtime, mountPath: /work }]
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+          resources:
+            requests: { cpu: 20m, memory: 48Mi }
+            limits: { cpu: 300m, memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+      volumes: [{ name: bundle, configMap: { name: spesavicina-ingestor-bundle } }, { name: runtime, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: coop-ingestor, namespace: grocery-offers }
+spec:
+  selector: { app.kubernetes.io/name: coop-ingestor }
+  ports: [{ name: http, port: 80, targetPort: http }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lidl-ingestor
+  namespace: grocery-offers
+  labels: { app.kubernetes.io/name: lidl-ingestor, app.kubernetes.io/part-of: spesavicina }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app.kubernetes.io/name: lidl-ingestor } }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: lidl-ingestor, app.kubernetes.io/part-of: spesavicina }
+      annotations: { spesavicina.dev/revision: "20261017-local-flyers-1" }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001 }
+      containers:
+        - name: ingestor
+          image: node:22-bookworm-slim
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c", "gzip -dc /bundle/ingestor.mjs.gz > /work/ingestor.mjs && exec node /work/ingestor.mjs"]
+          ports: [{ name: http, containerPort: 8080 }]
+          envFrom:
+            - configMapRef: { name: spesavicina-config }
+            - secretRef: { name: spesavicina-service-secrets }
+          env: [{ name: RETAILER, value: lidl }]
+          volumeMounts: [{ name: bundle, mountPath: /bundle, readOnly: true }, { name: runtime, mountPath: /work }]
+          readinessProbe: { httpGet: { path: /readyz, port: http }, initialDelaySeconds: 5, periodSeconds: 10, timeoutSeconds: 3 }
+          livenessProbe: { httpGet: { path: /healthz, port: http }, initialDelaySeconds: 15, periodSeconds: 20, timeoutSeconds: 3 }
+          resources: { requests: { cpu: 20m, memory: 48Mi }, limits: { cpu: 300m, memory: 256Mi } }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ["ALL"] } }
+      volumes: [{ name: bundle, configMap: { name: spesavicina-ingestor-bundle } }, { name: runtime, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: lidl-ingestor, namespace: grocery-offers }
+spec:
+  selector: { app.kubernetes.io/name: lidl-ingestor }
+  ports: [{ name: http, port: 80, targetPort: http }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: ins-ingestor, namespace: grocery-offers, labels: { app.kubernetes.io/name: ins-ingestor, app.kubernetes.io/part-of: spesavicina } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app.kubernetes.io/name: ins-ingestor } }
+  template:
+    metadata: { labels: { app.kubernetes.io/name: ins-ingestor, app.kubernetes.io/part-of: spesavicina }, annotations: { spesavicina.dev/revision: "20261017-local-flyers-1" } }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001 }
+      containers:
+        - name: ingestor
+          image: node:22-bookworm-slim
+          command: ["sh", "-c", "gzip -dc /bundle/ingestor.mjs.gz > /work/ingestor.mjs && exec node /work/ingestor.mjs"]
+          ports: [{ name: http, containerPort: 8080 }]
+          envFrom: [{ configMapRef: { name: spesavicina-config } }, { secretRef: { name: spesavicina-service-secrets } }]
+          env: [{ name: RETAILER, value: ins }]
+          volumeMounts: [{ name: bundle, mountPath: /bundle, readOnly: true }, { name: runtime, mountPath: /work }]
+          readinessProbe: { httpGet: { path: /readyz, port: http }, initialDelaySeconds: 5, periodSeconds: 10 }
+          livenessProbe: { httpGet: { path: /healthz, port: http }, initialDelaySeconds: 15, periodSeconds: 20 }
+          resources: { requests: { cpu: 20m, memory: 64Mi }, limits: { cpu: 400m, memory: 384Mi } }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ["ALL"] } }
+      volumes: [{ name: bundle, configMap: { name: spesavicina-ingestor-bundle } }, { name: runtime, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: ins-ingestor, namespace: grocery-offers }
+spec: { selector: { app.kubernetes.io/name: ins-ingestor }, ports: [{ name: http, port: 80, targetPort: http }] }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: conad-ingestor, namespace: grocery-offers, labels: { app.kubernetes.io/name: conad-ingestor, app.kubernetes.io/part-of: spesavicina } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app.kubernetes.io/name: conad-ingestor } }
+  template:
+    metadata: { labels: { app.kubernetes.io/name: conad-ingestor, app.kubernetes.io/part-of: spesavicina }, annotations: { spesavicina.dev/revision: "20261017-local-flyers-1" } }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001 }
+      containers:
+        - name: ingestor
+          image: node:22-bookworm-slim
+          command: ["sh", "-c", "gzip -dc /bundle/ingestor.mjs.gz > /work/ingestor.mjs && exec node /work/ingestor.mjs"]
+          ports: [{ name: http, containerPort: 8080 }]
+          envFrom: [{ configMapRef: { name: spesavicina-config } }, { secretRef: { name: spesavicina-service-secrets } }]
+          env: [{ name: RETAILER, value: conad }]
+          volumeMounts: [{ name: bundle, mountPath: /bundle, readOnly: true }, { name: runtime, mountPath: /work }]
+          readinessProbe: { httpGet: { path: /readyz, port: http }, initialDelaySeconds: 5, periodSeconds: 10 }
+          livenessProbe: { httpGet: { path: /healthz, port: http }, initialDelaySeconds: 15, periodSeconds: 20 }
+          resources: { requests: { cpu: 20m, memory: 64Mi }, limits: { cpu: 400m, memory: 384Mi } }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ["ALL"] } }
+      volumes: [{ name: bundle, configMap: { name: spesavicina-ingestor-bundle } }, { name: runtime, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: conad-ingestor, namespace: grocery-offers }
+spec: { selector: { app.kubernetes.io/name: conad-ingestor }, ports: [{ name: http, port: 80, targetPort: http }] }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: md-ingestor, namespace: grocery-offers, labels: { app.kubernetes.io/name: md-ingestor, app.kubernetes.io/part-of: spesavicina } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app.kubernetes.io/name: md-ingestor } }
+  template:
+    metadata: { labels: { app.kubernetes.io/name: md-ingestor, app.kubernetes.io/part-of: spesavicina }, annotations: { spesavicina.dev/revision: "20261017-local-flyers-1" } }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001 }
+      containers:
+        - name: ingestor
+          image: node:22-bookworm-slim
+          command: ["sh", "-c", "gzip -dc /bundle/ingestor.mjs.gz > /work/ingestor.mjs && exec node /work/ingestor.mjs"]
+          ports: [{ name: http, containerPort: 8080 }]
+          envFrom: [{ configMapRef: { name: spesavicina-config } }, { secretRef: { name: spesavicina-service-secrets } }]
+          env: [{ name: RETAILER, value: md }]
+          volumeMounts: [{ name: bundle, mountPath: /bundle, readOnly: true }, { name: runtime, mountPath: /work }]
+          readinessProbe: { httpGet: { path: /readyz, port: http }, initialDelaySeconds: 5, periodSeconds: 10 }
+          livenessProbe: { httpGet: { path: /healthz, port: http }, initialDelaySeconds: 15, periodSeconds: 20 }
+          resources: { requests: { cpu: 20m, memory: 64Mi }, limits: { cpu: 400m, memory: 384Mi } }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ["ALL"] } }
+      volumes: [{ name: bundle, configMap: { name: spesavicina-ingestor-bundle } }, { name: runtime, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: md-ingestor, namespace: grocery-offers }
+spec: { selector: { app.kubernetes.io/name: md-ingestor }, ports: [{ name: http, port: 80, targetPort: http }] }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: pam-ingestor, namespace: grocery-offers, labels: { app.kubernetes.io/name: pam-ingestor, app.kubernetes.io/part-of: spesavicina } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app.kubernetes.io/name: pam-ingestor } }
+  template:
+    metadata: { labels: { app.kubernetes.io/name: pam-ingestor, app.kubernetes.io/part-of: spesavicina }, annotations: { spesavicina.dev/revision: "20261017-local-flyers-1" } }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001 }
+      containers:
+        - name: ingestor
+          image: node:22-bookworm-slim
+          command: ["sh", "-c", "gzip -dc /bundle/ingestor.mjs.gz > /work/ingestor.mjs && exec node /work/ingestor.mjs"]
+          ports: [{ name: http, containerPort: 8080 }]
+          envFrom: [{ configMapRef: { name: spesavicina-config } }, { secretRef: { name: spesavicina-service-secrets } }]
+          env: [{ name: RETAILER, value: pam }]
+          volumeMounts: [{ name: bundle, mountPath: /bundle, readOnly: true }, { name: runtime, mountPath: /work }]
+          readinessProbe: { httpGet: { path: /readyz, port: http }, initialDelaySeconds: 5, periodSeconds: 10 }
+          livenessProbe: { httpGet: { path: /healthz, port: http }, initialDelaySeconds: 15, periodSeconds: 20 }
+          resources: { requests: { cpu: 20m, memory: 64Mi }, limits: { cpu: 400m, memory: 384Mi } }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ["ALL"] } }
+      volumes: [{ name: bundle, configMap: { name: spesavicina-ingestor-bundle } }, { name: runtime, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: pam-ingestor, namespace: grocery-offers }
+spec: { selector: { app.kubernetes.io/name: pam-ingestor }, ports: [{ name: http, port: 80, targetPort: http }] }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: borello-ingestor, namespace: grocery-offers, labels: { app.kubernetes.io/name: borello-ingestor, app.kubernetes.io/part-of: spesavicina } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app.kubernetes.io/name: borello-ingestor } }
+  template:
+    metadata: { labels: { app.kubernetes.io/name: borello-ingestor, app.kubernetes.io/part-of: spesavicina }, annotations: { spesavicina.dev/revision: "20261017-local-flyers-1" } }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001 }
+      containers:
+        - name: ingestor
+          image: node:22-bookworm-slim
+          command: ["sh", "-c", "gzip -dc /bundle/ingestor.mjs.gz > /work/ingestor.mjs && exec node /work/ingestor.mjs"]
+          ports: [{ name: http, containerPort: 8080 }]
+          envFrom: [{ configMapRef: { name: spesavicina-config } }, { secretRef: { name: spesavicina-service-secrets } }]
+          env: [{ name: RETAILER, value: borello }]
+          volumeMounts: [{ name: bundle, mountPath: /bundle, readOnly: true }, { name: runtime, mountPath: /work }]
+          readinessProbe: { httpGet: { path: /readyz, port: http }, initialDelaySeconds: 5, periodSeconds: 10 }
+          livenessProbe: { httpGet: { path: /healthz, port: http }, initialDelaySeconds: 15, periodSeconds: 20 }
+          resources: { requests: { cpu: 20m, memory: 64Mi }, limits: { cpu: 400m, memory: 384Mi } }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ["ALL"] } }
+      volumes: [{ name: bundle, configMap: { name: spesavicina-ingestor-bundle } }, { name: runtime, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: borello-ingestor, namespace: grocery-offers }
+spec: { selector: { app.kubernetes.io/name: borello-ingestor }, ports: [{ name: http, port: 80, targetPort: http }] }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: crai-ingestor, namespace: grocery-offers, labels: { app.kubernetes.io/name: crai-ingestor, app.kubernetes.io/part-of: spesavicina } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app.kubernetes.io/name: crai-ingestor } }
+  template:
+    metadata: { labels: { app.kubernetes.io/name: crai-ingestor, app.kubernetes.io/part-of: spesavicina }, annotations: { spesavicina.dev/revision: "20261017-local-flyers-1" } }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001 }
+      containers:
+        - name: ingestor
+          image: node:22-bookworm-slim
+          command: ["sh", "-c", "gzip -dc /bundle/ingestor.mjs.gz > /work/ingestor.mjs && exec node /work/ingestor.mjs"]
+          ports: [{ name: http, containerPort: 8080 }]
+          envFrom: [{ configMapRef: { name: spesavicina-config } }, { secretRef: { name: spesavicina-service-secrets } }]
+          env: [{ name: RETAILER, value: crai }]
+          volumeMounts: [{ name: bundle, mountPath: /bundle, readOnly: true }, { name: runtime, mountPath: /work }]
+          readinessProbe: { httpGet: { path: /readyz, port: http }, initialDelaySeconds: 5, periodSeconds: 10 }
+          livenessProbe: { httpGet: { path: /healthz, port: http }, initialDelaySeconds: 15, periodSeconds: 20 }
+          resources: { requests: { cpu: 20m, memory: 64Mi }, limits: { cpu: 400m, memory: 384Mi } }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ["ALL"] } }
+      volumes: [{ name: bundle, configMap: { name: spesavicina-ingestor-bundle } }, { name: runtime, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: crai-ingestor, namespace: grocery-offers }
+spec: { selector: { app.kubernetes.io/name: crai-ingestor }, ports: [{ name: http, port: 80, targetPort: http }] }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: mercato-ingestor, namespace: grocery-offers, labels: { app.kubernetes.io/name: mercato-ingestor, app.kubernetes.io/part-of: spesavicina } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app.kubernetes.io/name: mercato-ingestor } }
+  template:
+    metadata: { labels: { app.kubernetes.io/name: mercato-ingestor, app.kubernetes.io/part-of: spesavicina }, annotations: { spesavicina.dev/revision: "20261017-local-flyers-1" } }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001 }
+      containers:
+        - name: ingestor
+          image: node:22-bookworm-slim
+          command: ["sh", "-c", "gzip -dc /bundle/ingestor.mjs.gz > /work/ingestor.mjs && exec node /work/ingestor.mjs"]
+          ports: [{ name: http, containerPort: 8080 }]
+          envFrom: [{ configMapRef: { name: spesavicina-config } }, { secretRef: { name: spesavicina-service-secrets } }]
+          env: [{ name: RETAILER, value: mercato }]
+          volumeMounts: [{ name: bundle, mountPath: /bundle, readOnly: true }, { name: runtime, mountPath: /work }]
+          readinessProbe: { httpGet: { path: /readyz, port: http }, initialDelaySeconds: 5, periodSeconds: 10 }
+          livenessProbe: { httpGet: { path: /healthz, port: http }, initialDelaySeconds: 15, periodSeconds: 20 }
+          resources: { requests: { cpu: 20m, memory: 64Mi }, limits: { cpu: 400m, memory: 384Mi } }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ["ALL"] } }
+      volumes: [{ name: bundle, configMap: { name: spesavicina-ingestor-bundle } }, { name: runtime, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: mercato-ingestor, namespace: grocery-offers }
+spec: { selector: { app.kubernetes.io/name: mercato-ingestor }, ports: [{ name: http, port: 80, targetPort: http }] }
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: { name: carrefour-ingestion, namespace: grocery-offers }
+spec:
+  schedule: "17 5,17 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: trigger
+              image: node:22-bookworm-slim
+              command: ["node", "-e", "fetch(process.env.TARGET,{method:'POST',headers:{authorization:'Bearer '+process.env.SERVICE_TOKEN}}).then(async r=>{if(!r.ok)throw Error(await r.text());console.log(await r.text())})"]
+              env:
+                - { name: TARGET, value: "http://carrefour-ingestor/run" }
+                - name: SERVICE_TOKEN
+                  valueFrom: { secretKeyRef: { name: spesavicina-service-secrets, key: SERVICE_TOKEN } }
+              resources: { requests: { cpu: 5m, memory: 32Mi }, limits: { cpu: 100m, memory: 96Mi } }
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: { name: esselunga-ingestion, namespace: grocery-offers }
+spec:
+  schedule: "31 5,17 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: trigger
+              image: node:22-bookworm-slim
+              command: ["node", "-e", "fetch(process.env.TARGET,{method:'POST',headers:{authorization:'Bearer '+process.env.SERVICE_TOKEN}}).then(async r=>{if(!r.ok)throw Error(await r.text());console.log(await r.text())})"]
+              env:
+                - { name: TARGET, value: "http://esselunga-ingestor/run" }
+                - name: SERVICE_TOKEN
+                  valueFrom: { secretKeyRef: { name: spesavicina-service-secrets, key: SERVICE_TOKEN } }
+              resources: { requests: { cpu: 5m, memory: 32Mi }, limits: { cpu: 100m, memory: 96Mi } }
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: { name: ekom-ingestion, namespace: grocery-offers }
+spec:
+  schedule: "43 5,17 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: trigger
+              image: node:22-bookworm-slim
+              command: ["node", "-e", "fetch(process.env.TARGET,{method:'POST',headers:{authorization:'Bearer '+process.env.SERVICE_TOKEN}}).then(async r=>{if(!r.ok)throw Error(await r.text());console.log(await r.text())})"]
+              env:
+                - { name: TARGET, value: "http://ekom-ingestor/run" }
+                - name: SERVICE_TOKEN
+                  valueFrom: { secretKeyRef: { name: spesavicina-service-secrets, key: SERVICE_TOKEN } }
+              resources: { requests: { cpu: 5m, memory: 32Mi }, limits: { cpu: 100m, memory: 96Mi } }
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: { name: coop-ingestion, namespace: grocery-offers }
+spec:
+  schedule: "53 5,17 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: trigger
+              image: node:22-bookworm-slim
+              command: ["node", "-e", "fetch(process.env.TARGET,{method:'POST',headers:{authorization:'Bearer '+process.env.SERVICE_TOKEN}}).then(async r=>{if(!r.ok)throw Error(await r.text());console.log(await r.text())})"]
+              env:
+                - { name: TARGET, value: "http://coop-ingestor/run" }
+                - name: SERVICE_TOKEN
+                  valueFrom: { secretKeyRef: { name: spesavicina-service-secrets, key: SERVICE_TOKEN } }
+              resources: { requests: { cpu: 5m, memory: 32Mi }, limits: { cpu: 100m, memory: 96Mi } }
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: { name: lidl-ingestion, namespace: grocery-offers }
+spec:
+  schedule: "7 6,18 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: trigger
+              image: node:22-bookworm-slim
+              command: ["node", "-e", "fetch(process.env.TARGET,{method:'POST',headers:{authorization:'Bearer '+process.env.SERVICE_TOKEN}}).then(async r=>{if(!r.ok)throw Error(await r.text());console.log(await r.text())})"]
+              env:
+                - { name: TARGET, value: "http://lidl-ingestor/run" }
+                - name: SERVICE_TOKEN
+                  valueFrom: { secretKeyRef: { name: spesavicina-service-secrets, key: SERVICE_TOKEN } }
+              resources: { requests: { cpu: 5m, memory: 32Mi }, limits: { cpu: 100m, memory: 96Mi } }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: spesavicina
+  namespace: grocery-offers
+spec:
+  ingressClassName: tailscale
+  rules:
+    - host: spesavicina
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: spesavicina, port: { number: 80 } } }
+  tls:
+    - hosts: [spesavicina]
