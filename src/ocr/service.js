@@ -86,21 +86,29 @@ async function recognize(buffer) {
     const images = (await readdir(jobDir)).filter((name) => /^page-\d+\.jpg$/i.test(name)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
     if (!images.length) throw new Error("PDF renderer produced no pages");
     const pages = new Array(images.length);
+    const failedPages = [];
     let cursor = 0;
     await Promise.all(Array.from({ length: Math.min(PAGE_CONCURRENCY, images.length) }, async () => {
       while (cursor < images.length) {
         const index = cursor++;
-        const tsv = await run("tesseract", [join(jobDir, images[index]), "stdout", "-l", OCR_LANGUAGES, "--psm", "11", "tsv"]);
-        pages[index] = parseTesseractTsv(tsv);
+        try {
+          const tsv = await run("tesseract", [join(jobDir, images[index]), "stdout", "-l", OCR_LANGUAGES, "--psm", "11", "tsv"]);
+          pages[index] = parseTesseractTsv(tsv);
+        } catch (error) {
+          failedPages.push({ page: index + 1, error: error.message.slice(0, 500) });
+          pages[index] = { text: "", confidence: 0, words: 0 };
+        }
       }
     }));
     const wordCount = pages.reduce((sum, page) => sum + page.words, 0);
+    if (!wordCount) throw new Error(`OCR failed on all ${images.length} pages`);
     const result = {
       checksum,
       text: pages.map((page) => page.text).filter(Boolean).join("\n\f\n"),
       confidence: wordCount ? Number((pages.reduce((sum, page) => sum + page.confidence * page.words, 0) / wordCount).toFixed(3)) : 0,
       words: wordCount,
       pages: pages.length,
+      failedPages: failedPages.sort((left, right) => left.page - right.page),
       engine: "tesseract",
       languages: OCR_LANGUAGES,
       cached: false,

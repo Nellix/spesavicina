@@ -713,7 +713,7 @@ export async function fetchLiveOffers(env = process.env) {
       count: offers.length,
       sourceUrl: flyer.pdfUrl,
       parser: ocr ? "official-flyer-ocr" : "official-flyer-text",
-      ...(ocr ? { ocr: { engine: ocr.engine, confidence: ocr.confidence, pages: ocr.pages, cached: ocr.cached } } : {}),
+      ...(ocr ? { ocr: { engine: ocr.engine, confidence: ocr.confidence, pages: ocr.pages, failedPages: ocr.failedPages?.length ?? 0, cached: ocr.cached } } : {}),
       ...(offers.length ? {} : { status: ocr ? "ocr_no_searchable_products" : (text.trim() ? "no_searchable_products" : "image_only_flyer") }),
     });
   }
@@ -852,7 +852,7 @@ export async function fetchLiveOffers(env = process.env) {
       if (!offers.length && env.OCR_URL) {
         const ocr = await ocrPdf(pdfBuffer, env);
         offers = reviewOcrOffers(parseCarrefourText(ocrOfferText(ocr.text), env.CARREFOUR_STORE_ID ?? "carrefour-corso-belgio", env.CARREFOUR_FLYER_URL), ocr);
-        diagnostics.push({ retailer: "Carrefour", count: offers.length, sourceUrl: env.CARREFOUR_FLYER_URL, parser: "carrefour-ocr", ocr: { engine: ocr.engine, confidence: ocr.confidence, pages: ocr.pages, cached: ocr.cached } });
+        diagnostics.push({ retailer: "Carrefour", count: offers.length, sourceUrl: env.CARREFOUR_FLYER_URL, parser: "carrefour-ocr", ocr: { engine: ocr.engine, confidence: ocr.confidence, pages: ocr.pages, failedPages: ocr.failedPages?.length ?? 0, cached: ocr.cached } });
       }
     } else {
       offers = parseCarrefourHtml(await response.text(), env.CARREFOUR_STORE_ID ?? "carrefour-corso-belgio", env.CARREFOUR_FLYER_URL);
