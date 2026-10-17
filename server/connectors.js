@@ -141,7 +141,24 @@ const KNOWN_BRANDS = [
   "Negroni", "Amadori", "Kinder", "Yomo", "Mila", "Buitoni", "Biraghi", "Exquisa", "Jocca",
   "Parmareggio", "Granarolo", "Zuegg", "Novi", "Bauli", "Misura", "Scottex", "Dash", "Finish",
   "Fruittella", "Ballarini",
+  "Auricchio", "Gran Biscotto", "Fior di Dolcezza", "La Sorgente", "Pavesi", "Nelsen", "Accadì",
+  "Lalynea", "Special Dog", "Antica Forneria di Recco", "Ringo", "Blu Mare", "Bertolli", "Cirio",
+  "Winni's", "Sterzing Vipiteno", "Murgella", "Caseificio Palazzo", "Gioiella", "Président", "Kionas",
+  "Nutella", "Pizzoli", "Grand Krust", "Cameo", "Peroni", "Cavit", "Cesarini Sforza", "Lagaria",
+  "Fresh & Clean", "Tognana", "Omino Bianco", "BeTotal", "Ultima", "Ferrarini", "Lustenberger & Durst",
+  "Alival", "Igor", "Harbour", "Oatly", "Mandara", "Müller", "Orogel", "Buitoni", "Costa d'Oro", "Rizzoli",
 ];
+
+const STRUCTURED_BRAND_PREFIXES = [
+  "Cantina Produttori di Valdobbiadene", "Latteria Sociale di Cameri", "Harbour by MOWI",
+  "Pietro Coricelli", "Cantina Vignaioli", "Cantina Dorgali", "Due Palme", "Rocca Alata",
+  "San Vincenzo", "Masseria Lupata", "Strangola Galli", "Omino Bianco", "Gran Biscotto",
+  "Acqua Panna", "Birra Moretti", "Barton & Guestier", "Antica Tindari", "Conte di Alari",
+  "Felce Azzurra", "Giovanni Rana", "Gran Golia", "Latteria Sociale Valtellina", "Neutro Roberts",
+  "New Yorkers", "Riso Scotti", "Vecchia Modena", "WC Net",
+];
+
+const GENERIC_PRODUCT_PREFIX = /^(?:prodotto|acqua|birra|croissant|riso|uva|mele?|cavolfiore|cavolo|mandarini|arance|patate|radicchio|prosciutto|cosciotto|pollo|straccetti|fettine|hamburger|macinato|toma|grana padano|caprino|cozze|mortadella|asiago|salame|pasta sfoglia|bocconcini|olio|latte|carta igienica|detersivo|sugo|la focaccina)\b/i;
 
 function normalizedText(value = "") {
   return decodeHtml(value).replace(/\s+/g, " ").trim();
@@ -153,6 +170,17 @@ function inferKnownBrand(title = "") {
     const candidate = brand.toLocaleLowerCase("it").replace(/[’]/g, "'").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     return new RegExp(`(^|[^a-z0-9à-ÿ])${candidate}($|[^a-z0-9à-ÿ])`, "i").test(folded);
   }) ?? "";
+}
+
+function inferStructuredBrand(title = "") {
+  const normalized = normalizedText(title);
+  const known = inferKnownBrand(normalized);
+  if (known) return known;
+  const prefix = STRUCTURED_BRAND_PREFIXES.find((value) => normalized.toLocaleLowerCase("it").startsWith(value.toLocaleLowerCase("it")));
+  if (prefix) return prefix;
+  if (GENERIC_PRODUCT_PREFIX.test(normalized)) return "";
+  const candidate = normalized.match(/^[\p{L}\d][\p{L}\d'’!&.-]*/u)?.[0]?.replace(/[,.]+$/, "") ?? "";
+  return candidate.length >= 2 && /\p{L}/u.test(candidate) ? candidate : "";
 }
 
 function isoDate(value) {
@@ -182,7 +210,11 @@ function packFromTitle(title = "") {
 export function parseEsselungaApi(payload, storeId = "esselunga-porta-nuova", sourceUrl = "") {
   const rows = Array.isArray(payload?.items) ? payload.items : Array.isArray(payload?.data?.items) ? payload.data.items : [];
   const offers = [];
-  for (const item of rows) {
+  const items = rows.flatMap((item) => /^Parent_/i.test(normalizedText(item.title ?? item.name))
+    ? (Array.isArray(item.related_items) ? item.related_items : [])
+    : [item]);
+  const seen = new Set();
+  for (const item of items) {
     const productName = normalizedText(item.title ?? item.name);
     if (!productName || /^Parent_/i.test(productName)) continue;
     const price = Number(item.promozioni_prezzoPromo?.[0] ?? item.prezzoPromo ?? item.promoPrice ?? item.prezzo);
@@ -190,8 +222,10 @@ export function parseEsselungaApi(payload, storeId = "esselunga-porta-nuova", so
     const regularPrice = Number(item.prezzo ?? item.price);
     const promotionType = normalizedText(item.promozioni_desMeccanica?.[0] ?? item.promotionDescription);
     if (/senza offerta/i.test(promotionType)) continue;
-    const brand = inferKnownBrand(productName);
+    const brand = inferStructuredBrand(productName);
     const productCode = String(item.code ?? item.codice ?? item.id ?? sourceId("esselunga", storeId, productName, price));
+    if (seen.has(productCode)) continue;
+    seen.add(productCode);
     offers.push({
       sourceId: `esselunga-${productCode}`,
       retailer: "Esselunga",
@@ -207,8 +241,9 @@ export function parseEsselungaApi(payload, storeId = "esselunga-porta-nuova", so
       validFrom: isoDate(item.promozioni_dataInizioPromoArticolo?.[0] ?? item.promozioni_dataInizio?.[0] ?? item.dataInizio),
       validUntil: isoDate(item.promozioni_dataFinePromoArticolo?.[0] ?? item.promozioni_dataFine?.[0] ?? item.dataFine),
       sourceUrl,
+      identifiers: [{ scheme: "retailer_sku", retailer: "Esselunga", value: productCode }],
       sourceEvidence: { retailerProductId: productCode, imageUrl: item.imgUrl ?? item.imageUrl ?? item.image ?? "", parser: "esselunga-digital-grid-v1" },
-      confidence: brand ? 0.94 : 0.68,
+      confidence: brand ? (inferKnownBrand(productName) ? 0.94 : 0.86) : 0.68,
       status: brand ? "approved" : "review",
     });
   }
@@ -226,7 +261,7 @@ export function parseEkomLeaflet(payload, storeId = "ekom", sourceUrl = "") {
       const productName = normalizedText(metadata.TITLE ?? metadata.title);
       const price = Number(String(metadata.PRICE ?? metadata.price ?? "").replace(",", "."));
       if (!productName || !Number.isFinite(price) || price <= 0) continue;
-      const brand = inferKnownBrand(productName);
+      const brand = inferStructuredBrand(productName);
       const areaId = area.leafletAreaId ?? area.id ?? sourceId("ekom", storeId, productName, price);
       offers.push({
         sourceId: `ekom-${leaflet?.leafletId ?? leaflet?.id ?? "leaflet"}-${areaId}`,
@@ -244,7 +279,7 @@ export function parseEkomLeaflet(payload, storeId = "ekom", sourceUrl = "") {
         validUntil: isoDate(metadata.END_DATE ?? metadata.endDate),
         sourceUrl,
         sourceEvidence: { leafletId: leaflet?.leafletId ?? leaflet?.id, leafletAreaId: areaId, imageUrl: metadata.IMAGE?.location ?? metadata.IMAGE ?? "", parser: "ekom-leaflet-api-v1" },
-        confidence: brand ? 0.94 : 0.68,
+        confidence: brand ? (inferKnownBrand(productName) ? 0.94 : 0.86) : 0.68,
         status: brand ? "approved" : "review",
       });
     }
@@ -542,7 +577,9 @@ export function parseCarrefourHtml(html, storeId = "carrefour-corso-belgio", sou
     if (finalPrice === null) continue;
     const name = decodeHtml(product.name);
     const packMatches = [...name.matchAll(/(?:\d+\s*[x×]\s*)?\d+(?:[,.]\d+)?\s*(?:kg|g|ml|l)\b/gi)];
-    const brand = decodeHtml(product.brand ?? "");
+    const explicitBrand = decodeHtml(product.brand ?? "");
+    const inferredBrand = inferStructuredBrand(name);
+    const brand = explicitBrand || inferredBrand;
     const unitPrice = decodeHtml(chunk.match(/d-prices__partial[^>]*>[\s\S]*?<\/span>/i)?.[0] ?? "");
     const condition = /SPESAMICA/i.test(chunk) ? "SpesAmica PAYBACK" : /PUNTI SPRINT/i.test(chunk) ? "Punti Sprint" : "";
     const imageUrl = decodeHtml(chunk.match(/<img(?=[^>]*\btile-image\b)[^>]*\bdata-src=["']([^"']+)["']/i)?.[1] ?? "");
@@ -551,8 +588,10 @@ export function parseCarrefourHtml(html, storeId = "carrefour-corso-belgio", sou
       brand: brand || name.split(/\s+/)[0], variant: "", packSize: packMatches.at(-1)?.[0] ?? "",
       price: finalPrice, listPrice: original && original > finalPrice ? original : null,
       unitPrice, condition, ...dates, sourceUrl,
+      identifiers: [{ scheme: "retailer_sku", retailer: "Carrefour", value: id }],
       sourceEvidence: { retailerProductId: id, imageUrl, parser: "carrefour-html-v1" },
-      confidence: brand ? 0.94 : 0.68, status: brand ? "approved" : "review",
+      confidence: explicitBrand ? 0.96 : inferredBrand ? (inferKnownBrand(name) ? 0.92 : 0.84) : 0.68,
+      status: brand ? "approved" : "review",
     });
   }
   return offers.slice(0, 500);

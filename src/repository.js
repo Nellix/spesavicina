@@ -173,27 +173,65 @@ export async function searchProducts(query, limit = 8, client = pool) {
     .map(({ product, score }) => ({ ...product, score }));
 }
 
-async function resolveProduct(client, offer, allowCreate) {
+function identifierKey(identifier) {
+  return `${identifier.scheme}|${identifier.retailer ?? ""}|${identifier.value}`;
+}
+
+async function ingestionContext(client) {
+  const [products, identifiers] = await Promise.all([
+    client.query(`
+      SELECT p.*,COALESCE(array_agg(pa.alias ORDER BY pa.alias) FILTER (WHERE pa.alias IS NOT NULL),'{}') AS aliases
+      FROM products p LEFT JOIN product_aliases pa ON pa.product_id=p.id
+      WHERE p.status='active'
+      GROUP BY p.id
+    `),
+    client.query(`SELECT scheme,retailer,value,product_id FROM product_identifiers`),
+  ]);
+  return {
+    products: products.rows.map((row) => ({
+      id: row.id, brand: row.brand, productName: row.product_name, variant: row.variant,
+      packSize: row.pack_size, category: row.category, aliases: row.aliases ?? [], activeOfferCount: 0,
+    })),
+    identifiers: new Map(identifiers.rows.map((row) => [identifierKey(row), row.product_id])),
+  };
+}
+
+async function resolveProduct(client, offer, allowCreate, context = null) {
   if (offer.productId) {
-    const found = await client.query(`SELECT id FROM products WHERE id=$1`, [offer.productId]);
-    if (found.rowCount) return offer.productId;
+    if (context?.products.some((product) => product.id === offer.productId)) return offer.productId;
+    if (!context) {
+      const found = await client.query(`SELECT id FROM products WHERE id=$1`, [offer.productId]);
+      if (found.rowCount) return offer.productId;
+    }
   }
   const identifiers = offer.identifiers ?? [];
   for (const identifier of identifiers) {
+    if (context?.identifiers.has(identifierKey(identifier))) return context.identifiers.get(identifierKey(identifier));
+    if (context) continue;
     const found = await client.query(`SELECT product_id FROM product_identifiers WHERE scheme=$1 AND retailer=$2 AND value=$3`, [identifier.scheme, identifier.retailer ?? "", identifier.value]);
     if (found.rowCount) return found.rows[0].product_id;
   }
   if (!allowCreate) return null;
-  const candidates = await searchProducts(`${offer.brand} ${offer.productName} ${offer.variant ?? ""} ${offer.packSize ?? ""}`, 4, client);
+  const query = `${offer.brand} ${offer.productName} ${offer.variant ?? ""} ${offer.packSize ?? ""}`;
+  const candidates = context
+    ? context.products.map((product) => ({ product, score: productSearchScore(query, product) }))
+      .filter((item) => item.score > 0)
+      .sort((left, right) => right.score - left.score)
+      .slice(0, 4)
+      .map(({ product, score }) => ({ ...product, score }))
+    : await searchProducts(query, 4, client);
   const candidate = candidates.find((item) => item.score >= 35);
   if (candidate) return candidate.id;
   const id = slug(`${offer.brand}-${offer.productName}-${offer.variant ?? ""}-${offer.packSize ?? ""}`);
-  await upsertProduct(client, { id, brand: offer.brand, productName: offer.productName, variant: offer.variant ?? "", packSize: offer.packSize ?? "", category: "Other", aliases: [] });
+  const product = { id, brand: offer.brand, productName: offer.productName, variant: offer.variant ?? "", packSize: offer.packSize ?? "", category: "Other", aliases: [], activeOfferCount: 0 };
+  await upsertProduct(client, product);
+  if (context && !context.products.some((item) => item.id === id)) context.products.push(product);
   return id;
 }
 
 async function ingestWithClient(client, rawOffers, source, diagnostics = [], snapshot = {}) {
   const run = await client.query(`INSERT INTO ingestion_runs(source,status) VALUES ($1,'running') RETURNING id`, [source]);
+  const context = await ingestionContext(client);
   let reviewCount = 0;
   let imported = 0;
   let expired = 0;
@@ -202,7 +240,7 @@ async function ingestWithClient(client, rawOffers, source, diagnostics = [], sna
     for (const raw of rawOffers) {
       const offer = prepareOffer(raw);
       if (!offer.storeId || !offer.retailer || !offer.productName || !offer.brand || !Number.isFinite(Number(offer.price))) continue;
-      const productId = await resolveProduct(client, offer, offer.status === "approved");
+      const productId = await resolveProduct(client, offer, offer.status === "approved", context);
       seenSourceIds.push(offer.sourceId);
       if (productId) {
         for (const identifier of offer.identifiers ?? []) {
@@ -210,6 +248,7 @@ async function ingestWithClient(client, rawOffers, source, diagnostics = [], sna
             INSERT INTO product_identifiers(product_id,scheme,retailer,value) VALUES ($1,$2,$3,$4)
             ON CONFLICT(scheme,retailer,value) DO UPDATE SET product_id=EXCLUDED.product_id
           `, [productId, identifier.scheme, identifier.retailer ?? "", String(identifier.value)]);
+          context.identifiers.set(identifierKey(identifier), productId);
         }
       }
       if (offer.status === "review") reviewCount += 1;

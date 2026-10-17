@@ -160,7 +160,7 @@ async function scheduleDueAnalyses() {
   lastSweepAt = Date.now();
   const { rows } = await pool.query(`
     SELECT ps.profile_id,s.id FROM stores s JOIN profile_stores ps ON ps.store_id=s.id AND ps.selected=true
-    WHERE s.enabled=true AND s.logo_key IN ('carrefour','esselunga','ekom','coop','lidl','ins','conad','md','pam','borello','crai','mercato')
+    WHERE s.enabled=true AND lower(s.retailer) IN ('carrefour','esselunga','ekom','coop','lidl','in''s','ins','conad','md','pam','borello','crai','mercatò','mercato')
       AND (s.offers_last_analyzed_at IS NULL OR s.offers_last_analyzed_at < now()-interval '6 hours')
       AND NOT EXISTS (SELECT 1 FROM store_analysis_jobs j WHERE j.profile_id=ps.profile_id AND j.store_id=s.id AND j.kind='offer_analysis' AND j.status IN ('queued','running'))
     LIMIT 10

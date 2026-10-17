@@ -51,11 +51,24 @@ test("Esselunga digital-grid API extracts official promotional prices", () => {
   assert.equal(offers[0].sourceEvidence.imageUrl, "https://images.example.test/brimi.jpg");
 });
 
-test("short brand names only match whole words", () => {
+test("Esselunga digital-grid expands grouped related products", () => {
+  const offers = parseEsselungaApi({ items: [{
+    title: "Parent_group", related_items: [
+      { code: "a", title: "Bonduelle Insalata 200 g", prezzo: 2, promozioni_prezzoPromo: [1.4], promozioni_desMeccanica: ["Sconto %"] },
+      { code: "b", title: "Cirio Passata 700 g", prezzo: 1.5, promozioni_prezzoPromo: [0.99], promozioni_desMeccanica: ["Sconto %"] },
+    ],
+  }] }, "store-es", "https://www.esselunga.it/flyer");
+  assert.equal(offers.length, 2);
+  assert.deepEqual(offers.map((offer) => offer.sourceId), ["esselunga-a", "esselunga-b"]);
+  assert.ok(offers.every((offer) => offer.status === "approved"));
+  assert.deepEqual(offers[0].identifiers[0], { scheme: "retailer_sku", retailer: "Esselunga", value: "a" });
+});
+
+test("structured title fallback does not mistake an embedded short brand", () => {
   const offers = parseEsselungaApi({ items: [{ code: "cot-1", title: "Cotonella slip donna 2 paia", prezzo: 12.9, promozioni_prezzoPromo: [10.32], promozioni_desMeccanica: ["Sc % Fidaty"] }] });
   assert.equal(offers.length, 1);
   assert.equal(offers[0].brand, "Cotonella");
-  assert.equal(offers[0].status, "review");
+  assert.equal(offers[0].status, "approved");
 });
 
 test("Ekom official leaflet API extracts products and quarantines unknown brands", () => {
