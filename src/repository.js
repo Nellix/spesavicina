@@ -248,6 +248,7 @@ async function ingestWithClient(client, rawOffers, source, diagnostics = [], sna
   let reviewCount = 0;
   let imported = 0;
   let expired = 0;
+  let rejected = 0;
   const seenSourceIds = [];
   try {
     for (const raw of rawOffers) {
@@ -281,6 +282,15 @@ async function ingestWithClient(client, rawOffers, source, diagnostics = [], sna
       await emit(client, "offer.changed", "offer", result.rows[0].id, { offerId: Number(result.rows[0].id) });
     }
     if (snapshot.complete && seenSourceIds.length && Array.isArray(snapshot.storeIds) && snapshot.storeIds.length) {
+      if (snapshot.rejectUnseenParser) {
+        const discarded = await client.query(`
+          UPDATE offers SET status='rejected'
+          WHERE lower(retailer)=lower($1) AND store_id=ANY($2::text[]) AND status IN ('approved','review','expired')
+            AND source_evidence->>'parser'=$4
+            AND NOT(source_id=ANY($3::text[])) AND last_seen_at<now()
+        `, [snapshot.retailer, snapshot.storeIds, seenSourceIds, snapshot.rejectUnseenParser]);
+        rejected = discarded.rowCount;
+      }
       const reconciled = await client.query(`
         UPDATE offers SET status='expired',valid_until=COALESCE(valid_until,last_seen_at::date)
         WHERE lower(retailer)=lower($1) AND store_id=ANY($2::text[]) AND status IN ('approved','review')
@@ -292,7 +302,7 @@ async function ingestWithClient(client, rawOffers, source, diagnostics = [], sna
       for (const row of reconciled.rows) await emit(client, "offer.changed", "offer", row.id, { offerId: Number(row.id), expired: true });
     }
     await client.query(`UPDATE ingestion_runs SET status='success', offers_found=$1, review_count=$2, diagnostics=$3, finished_at=now() WHERE id=$4`, [imported, reviewCount, JSON.stringify(diagnostics), run.rows[0].id]);
-    return { offersFound: imported, reviewCount, expiredCount: expired, runId: Number(run.rows[0].id) };
+    return { offersFound: imported, reviewCount, expiredCount: expired, rejectedCount: rejected, runId: Number(run.rows[0].id) };
   } catch (error) {
     throw Object.assign(error, { ingestionRunId: run.rows[0].id });
   }

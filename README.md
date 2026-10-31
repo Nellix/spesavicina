@@ -27,7 +27,7 @@ The Kubernetes deployment contains independently operated services in the single
 - `lidl-ingestor`: Lidl Italy product-grid adapter with Piemonte regional prices and Lidl Plus conditions;
 - `tigota-ingestor`: Tigotà structured online-promotion adapter with product images, exact SKUs, and store-pickup availability caveats;
 - `action-ingestor`: Action Italy structured weekly-promotion adapter with product images, discount prices, and promotion dates;
-- `iperbimbo-ingestor`: Iperbimbo Shopify sale-product adapter with variants, SKUs, compare-at prices, and product images;
+- `iperbimbo-ingestor`: Iperbimbo current-flyer adapter that requires the active monthly flyer tag and preserves variants, SKUs, validity dates, prices, and product images;
 - `prenatal-ingestor`: Prénatal official-catalogue discovery, PDF text extraction, validity parsing, and optional OCR fallback;
 - `ins`, `conad`, `md`, `pam`, `borello`, `crai`, and `mercato` ingestors: isolated official-flyer adapters used for selected nearby stores;
 - `spesavicina-postgres`: PostgreSQL 16 managed by the cluster's Zalando operator;

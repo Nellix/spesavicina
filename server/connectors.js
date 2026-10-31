@@ -352,12 +352,29 @@ export function parseActionPage(html, storeId = "action", sourceUrl = "", now = 
   return { offers, totalPages: Math.max(1, ...pageNumbers) };
 }
 
-export function parseIperbimboProducts(payload, storeId = "iperbimbo-italy", sourceUrl = "https://www.iperbimbo.it/products.json") {
+export function parseIperbimboFlyerMeta(html, now = new Date()) {
+  const text = normalizedText(html);
+  const titleMatch = text.match(/volantino di\s+([a-zà-ÿ]+)(?:\s+(\d{4}))?/i);
+  if (!titleMatch) return null;
+  const month = `${titleMatch[1][0].toLocaleUpperCase("it")}${titleMatch[1].slice(1).toLocaleLowerCase("it")}`;
+  const validity = italianFlyerValidity(text, now);
+  if (!validity.validFrom || !validity.validUntil) return null;
+  return {
+    title: `Volantino di ${month}${titleMatch[2] ? ` ${titleMatch[2]}` : ""}`,
+    promotionTag: `Volantino ${month}`,
+    ...validity,
+  };
+}
+
+export function parseIperbimboProducts(payload, storeId = "iperbimbo-italy", sourceUrl = "https://www.iperbimbo.it/products.json", flyer = {}) {
   const offers = [];
   const products = Array.isArray(payload?.products) ? payload.products : [];
   for (const product of products) {
     const productName = normalizedText(product.title);
     const brand = normalizedText(product.vendor) || inferStructuredBrand(productName);
+    const tags = Array.isArray(product.tags) ? product.tags.map(normalizedText) : String(product.tags ?? "").split(",").map(normalizedText);
+    const requiredTag = normalizedText(flyer.promotionTag).toLocaleLowerCase("it");
+    if (!requiredTag || !tags.some((tag) => tag.toLocaleLowerCase("it") === requiredTag)) continue;
     if (!product?.id || !productName || !brand) continue;
     for (const variant of product.variants ?? []) {
       const price = Number(variant.price);
@@ -377,12 +394,12 @@ export function parseIperbimboProducts(payload, storeId = "iperbimbo-italy", sou
         price,
         listPrice,
         unitPrice: "",
-        condition: "Online promotion; prices and availability may differ by physical store",
-        validFrom: null,
-        validUntil: null,
+        condition: "Current official flyer; verify price and availability at the selected store",
+        validFrom: flyer.validFrom ?? null,
+        validUntil: flyer.validUntil ?? null,
         sourceUrl: productUrl,
         identifiers: [{ scheme: "retailer_sku", retailer: "Iperbimbo", value: String(variant.sku || variant.id) }],
-        sourceEvidence: { imageUrl, parser: "iperbimbo-shopify-v1", sourceScope: "online-promotion" },
+        sourceEvidence: { imageUrl, parser: "iperbimbo-shopify-flyer-v2", sourceScope: "current-store-flyer", promotionTag: flyer.promotionTag, flyerTitle: flyer.title ?? null },
         confidence: 0.98,
         status: "approved",
       });
@@ -940,27 +957,39 @@ export async function fetchLiveOffers(env = process.env) {
     const offers = [];
     let page = 1;
     let restricted = false;
-    while (page <= 20) {
-      const pageUrl = new URL(env.IPERBIMBO_PRODUCTS_URL);
-      if (!pageUrl.searchParams.has("limit")) pageUrl.searchParams.set("limit", "250");
-      pageUrl.searchParams.set("page", String(page));
-      const response = await fetch(pageUrl, { headers, signal: AbortSignal.timeout(30_000) });
-      if ([401, 403, 429].includes(response.status)) { restricted = true; break; }
-      if (!response.ok) throw new Error(`Iperbimbo products page ${page} returned ${response.status}`);
-      const payload = await response.json();
-      const products = Array.isArray(payload?.products) ? payload.products : [];
-      offers.push(...parseIperbimboProducts(payload, env.IPERBIMBO_STORE_ID ?? "iperbimbo-italy", pageUrl.href));
-      if (products.length < Number(pageUrl.searchParams.get("limit"))) break;
-      page += 1;
+    let productsScanned = 0;
+    const flyerUrl = env.IPERBIMBO_FLYER_URL ?? "https://www.iperbimbo.it/pages/volantino-iperbimbo";
+    const flyerResponse = await fetch(flyerUrl, { headers: { ...headers, accept: "text/html,application/xhtml+xml" }, signal: AbortSignal.timeout(30_000) });
+    if ([401, 403, 429].includes(flyerResponse.status)) restricted = true;
+    else if (!flyerResponse.ok) throw new Error(`Iperbimbo flyer page returned ${flyerResponse.status}`);
+    const flyer = restricted ? null : parseIperbimboFlyerMeta(await flyerResponse.text());
+    if (!restricted && flyer) {
+      while (page <= 20) {
+        const pageUrl = new URL(env.IPERBIMBO_PRODUCTS_URL);
+        if (!pageUrl.searchParams.has("limit")) pageUrl.searchParams.set("limit", "250");
+        pageUrl.searchParams.set("page", String(page));
+        const response = await fetch(pageUrl, { headers, signal: AbortSignal.timeout(30_000) });
+        if ([401, 403, 429].includes(response.status)) { restricted = true; break; }
+        if (!response.ok) throw new Error(`Iperbimbo products page ${page} returned ${response.status}`);
+        const payload = await response.json();
+        const products = Array.isArray(payload?.products) ? payload.products : [];
+        productsScanned += products.length;
+        offers.push(...parseIperbimboProducts(payload, env.IPERBIMBO_STORE_ID ?? "iperbimbo-italy", pageUrl.href, flyer));
+        if (products.length < Number(pageUrl.searchParams.get("limit"))) break;
+        page += 1;
+      }
     }
     results.push(...offers);
     diagnostics.push({
       retailer: "Iperbimbo",
       count: offers.length,
-      sourceUrl: env.IPERBIMBO_PRODUCTS_URL,
-      parser: "shopify-products",
+      sourceUrl: flyerUrl,
+      catalogueUrl: env.IPERBIMBO_PRODUCTS_URL,
+      parser: "shopify-current-flyer",
       pages: page,
-      ...(restricted ? { status: "source_access_restricted" } : offers.length ? {} : { status: "no_searchable_products" }),
+      productsScanned,
+      ...(flyer ? { promotionTag: flyer.promotionTag, validFrom: flyer.validFrom, validUntil: flyer.validUntil } : {}),
+      ...(restricted ? { status: "source_access_restricted" } : !flyer ? { status: "no_current_flyer" } : offers.length ? {} : { status: "no_searchable_products" }),
     });
   }
 

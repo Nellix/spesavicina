@@ -113,6 +113,7 @@ data:
   ACTION_OFFERS_URL: https://www.action.com/it-it/promozione-settimanale/
   ACTION_STORE_ID: action-italy
   IPERBIMBO_PRODUCTS_URL: https://www.iperbimbo.it/products.json?limit=250
+  IPERBIMBO_FLYER_URL: https://www.iperbimbo.it/pages/volantino-iperbimbo
   IPERBIMBO_STORE_ID: iperbimbo-italy
   PRENATAL_CATALOG_URL: https://www.prenatal.com/catalog/
   PRENATAL_STORE_ID: prenatal-italy

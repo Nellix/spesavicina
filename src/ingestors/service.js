@@ -88,7 +88,7 @@ async function runIngestion(store = null) {
               : RETAILER === "action"
                 ? { ACTION_OFFERS_URL: sourceUrl, ACTION_STORE_ID: store?.id ?? process.env.ACTION_STORE_ID ?? "action" }
                 : RETAILER === "iperbimbo"
-                  ? { IPERBIMBO_PRODUCTS_URL: sourceUrl, IPERBIMBO_STORE_ID: store?.id ?? process.env.IPERBIMBO_STORE_ID ?? "iperbimbo-italy" }
+                  ? { IPERBIMBO_PRODUCTS_URL: sourceUrl, IPERBIMBO_FLYER_URL: process.env.IPERBIMBO_FLYER_URL || "https://www.iperbimbo.it/pages/volantino-iperbimbo", IPERBIMBO_STORE_ID: store?.id ?? process.env.IPERBIMBO_STORE_ID ?? "iperbimbo-italy" }
                   : RETAILER === "prenatal"
                     ? { PRENATAL_CATALOG_URL: sourceUrl, PRENATAL_STORE_ID: store?.id ?? process.env.PRENATAL_STORE_ID ?? "prenatal-italy" }
                 : {
@@ -114,7 +114,7 @@ async function runIngestion(store = null) {
       source: SERVICE,
       offers: result.offers,
       diagnostics: result.diagnostics,
-      snapshot: { complete: completeSnapshot, retailer: result.offers[0]?.retailer ?? RETAILER, storeIds: [...new Set(result.offers.map((offer) => offer.storeId).filter(Boolean))] },
+      snapshot: { complete: completeSnapshot, retailer: result.offers[0]?.retailer ?? RETAILER, storeIds: [...new Set(result.offers.map((offer) => offer.storeId).filter(Boolean))], rejectUnseenParser: RETAILER === "iperbimbo" ? "iperbimbo-shopify-v1" : null },
     }),
     signal: AbortSignal.timeout(Number(process.env.INGESTION_POST_TIMEOUT_MS ?? 900_000)),
   });

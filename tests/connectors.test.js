@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { discoverOfficialFlyer, discoverPrenatalPdf, discoverPrenatalViewer, italianFlyerValidity, parseActionPage, parseCarrefourHtml, parseCarrefourText, parseCoopProductDetails, parseEkomLeaflet, parseEsselungaApi, parseEsselungaHtml, parseIperbimboProducts, parseLidlHtml, parseOfficialFlyerText, parseTigotaPage } from "../server/connectors.js";
+import { discoverOfficialFlyer, discoverPrenatalPdf, discoverPrenatalViewer, italianFlyerValidity, parseActionPage, parseCarrefourHtml, parseCarrefourText, parseCoopProductDetails, parseEkomLeaflet, parseEsselungaApi, parseEsselungaHtml, parseIperbimboFlyerMeta, parseIperbimboProducts, parseLidlHtml, parseOfficialFlyerText, parseTigotaPage } from "../server/connectors.js";
 
 test("Esselunga connector extracts structured product offers", () => {
   const html = `<script type="application/ld+json">{"@type":"Product","name":"Yogurt intero Brimi","brand":{"name":"Brimi"},"size":"2 x 125 g","offers":{"price":"1.19","highPrice":"1.79","priceValidUntil":"2026-10-01","eligibleCustomerType":"Fidaty"}}</script>`;
@@ -155,18 +155,24 @@ test("Action weekly promotion payload extracts exact deal evidence", () => {
   assert.equal(page.offers[0].sourceEvidence.imageUrl, "https://asset.action.com/image/upload/2551185_example");
 });
 
-test("Iperbimbo Shopify products include only real compare-at promotions", () => {
-  const payload = { products: [{ id: 10, title: "Pampers Progressi Midi 28 pannolini", handle: "pampers-progressi-midi", vendor: "Pampers", images: [{ src: "https://cdn.shopify.com/pampers.jpg" }], variants: [
+test("Iperbimbo products require the active flyer tag and inherit its validity", () => {
+  const flyer = parseIperbimboFlyerMeta("<h1>Volantino di Novembre 2026</h1><p>Dal 31 ottobre al 22 novembre</p>", new Date("2026-10-31T00:00:00Z"));
+  assert.deepEqual(flyer, { title: "Volantino di Novembre 2026", promotionTag: "Volantino Novembre", validFrom: "2026-10-31", validUntil: "2026-11-22" });
+  const payload = { products: [{ id: 10, title: "Pampers Progressi Midi 28 pannolini", handle: "pampers-progressi-midi", vendor: "Pampers", tags: ["active", "Volantino Novembre"], images: [{ src: "https://cdn.shopify.com/pampers.jpg" }], variants: [
     { id: 101, title: "Default Title", sku: "PMP-28", price: "8.90", compare_at_price: "12.90", available: true },
     { id: 102, title: "Scorta", price: "24.90", compare_at_price: "24.90", available: true },
+  ] }, { id: 20, title: "Chicco Cuocipappa", vendor: "Chicco", tags: ["active", "Omnibus: Not on sale"], variants: [
+    { id: 201, title: "Default Title", price: "99.00", compare_at_price: "109.00", available: true },
   ] }] };
-  const offers = parseIperbimboProducts(payload, "iperbimbo-torino", "https://www.iperbimbo.it/products.json?limit=250");
+  const offers = parseIperbimboProducts(payload, "iperbimbo-torino", "https://www.iperbimbo.it/products.json?limit=250", flyer);
   assert.equal(offers.length, 1);
   assert.equal(offers[0].retailer, "Iperbimbo");
   assert.equal(offers[0].sourceId, "iperbimbo-iperbimbo-torino-10-101");
   assert.equal(offers[0].brand, "Pampers");
   assert.equal(offers[0].price, 8.9);
   assert.equal(offers[0].listPrice, 12.9);
+  assert.equal(offers[0].validUntil, "2026-11-22");
+  assert.equal(offers[0].sourceEvidence.promotionTag, "Volantino Novembre");
   assert.equal(offers[0].sourceEvidence.imageUrl, "https://cdn.shopify.com/pampers.jpg");
 });
 
