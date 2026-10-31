@@ -398,8 +398,11 @@ export function parseIperbimboProducts(payload, storeId = "iperbimbo-italy", sou
         validFrom: flyer.validFrom ?? null,
         validUntil: flyer.validUntil ?? null,
         sourceUrl: productUrl,
-        identifiers: [{ scheme: "retailer_sku", retailer: "Iperbimbo", value: String(variant.sku || variant.id) }],
-        sourceEvidence: { imageUrl, parser: "iperbimbo-shopify-flyer-v2", sourceScope: "current-store-flyer", promotionTag: flyer.promotionTag, flyerTitle: flyer.title ?? null },
+        identifiers: [
+          { scheme: "retailer_product", retailer: "Iperbimbo", value: String(product.id) },
+          { scheme: "retailer_sku", retailer: "Iperbimbo", value: String(variant.sku || variant.id) },
+        ],
+        sourceEvidence: { imageUrl, parser: "iperbimbo-shopify-flyer-v2", sourceScope: "current-store-flyer", retailerProductId: String(product.id), promotionTag: flyer.promotionTag, flyerTitle: flyer.title ?? null },
         confidence: 0.98,
         status: "approved",
       });

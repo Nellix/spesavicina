@@ -82,7 +82,7 @@ const migrations = [
     CREATE TABLE IF NOT EXISTS product_identifiers (
       id BIGSERIAL PRIMARY KEY,
       product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-      scheme TEXT NOT NULL CHECK (scheme IN ('gtin','ean','retailer_sku')),
+      scheme TEXT NOT NULL CHECK (scheme IN ('gtin','ean','retailer_sku','retailer_product')),
       retailer TEXT NOT NULL DEFAULT '',
       value TEXT NOT NULL,
       UNIQUE (scheme, retailer, value)
@@ -288,6 +288,10 @@ const migrations = [
   [7, `
     DELETE FROM offers WHERE lower(retailer)='amazon' OR store_id='amazon-it-online';
     DELETE FROM stores WHERE id='amazon-it-online' OR lower(retailer)='amazon';
+  `],
+  [8, `
+    ALTER TABLE product_identifiers DROP CONSTRAINT IF EXISTS product_identifiers_scheme_check;
+    ALTER TABLE product_identifiers ADD CONSTRAINT product_identifiers_scheme_check CHECK (scheme IN ('gtin','ean','retailer_sku','retailer_product'));
   `],
 ];
 

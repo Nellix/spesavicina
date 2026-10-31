@@ -172,6 +172,7 @@ test("Iperbimbo products require the active flyer tag and inherit its validity",
   assert.equal(offers[0].price, 8.9);
   assert.equal(offers[0].listPrice, 12.9);
   assert.equal(offers[0].validUntil, "2026-11-22");
+  assert.deepEqual(offers[0].identifiers[0], { scheme: "retailer_product", retailer: "Iperbimbo", value: "10" });
   assert.equal(offers[0].sourceEvidence.promotionTag, "Volantino Novembre");
   assert.equal(offers[0].sourceEvidence.imageUrl, "https://cdn.shopify.com/pampers.jpg");
 });
