@@ -8,4 +8,6 @@ export const CANONICAL_PRODUCTS = [
 export const DEMO_STORES = [
   { id: "carrefour-corso-belgio", retailer: "Carrefour", name: "Carrefour Market · Corso Belgio", address: "Corso Belgio 173, Torino", latitude: 45.0797, longitude: 7.7082, distanceKm: 0.8, sourceType: "html", logoKey: "carrefour" },
   { id: "esselunga-porta-nuova", retailer: "Esselunga", name: "Esselunga · Porta Nuova", address: "Corso Filippo Turati 27, Torino", latitude: 45.0544, longitude: 7.6761, distanceKm: 4.6, sourceType: "live", logoKey: "esselunga", sourceUrl: "https://www.esselunga.it/it-it/promozioni/volantini.esselunga-di-torino-porta-nuova.top.html" },
+  { id: "tigota-italy", retailer: "Tigotà", name: "Tigotà · Online promotions", address: "Italy-wide online catalogue", latitude: 45.0703, longitude: 7.6869, distanceKm: 999, sourceType: "catalogue", logoKey: "tigota", sourceUrl: "https://www.tigota.it/offerte-online" },
+  { id: "action-italy", retailer: "Action", name: "Action · Weekly promotions", address: "Italy-wide weekly catalogue", latitude: 45.0703, longitude: 7.6869, distanceKm: 999, sourceType: "catalogue", logoKey: "action", sourceUrl: "https://www.action.com/it-it/promozione-settimanale/" },
 ];

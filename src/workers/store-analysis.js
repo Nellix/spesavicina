@@ -20,6 +20,8 @@ const INGESTORS = {
   borello: process.env.BORELLO_INGESTOR_URL ?? "http://borello-ingestor",
   crai: process.env.CRAI_INGESTOR_URL ?? "http://crai-ingestor",
   mercato: process.env.MERCATO_INGESTOR_URL ?? "http://mercato-ingestor",
+  tigota: process.env.TIGOTA_INGESTOR_URL ?? "http://tigota-ingestor",
+  action: process.env.ACTION_INGESTOR_URL ?? "http://action-ingestor",
 };
 
 function radians(value) { return value * Math.PI / 180; }
@@ -44,12 +46,14 @@ function logoKey(value = "") {
   if (/\bmd\b/.test(name) || name.includes("md discount")) return "md";
   if (name.includes("eurospin")) return "eurospin";
   if (name.includes("crai")) return "crai";
+  if (name.includes("tigotà") || name.includes("tigota")) return "tigota";
+  if (/\baction\b/.test(name)) return "action";
   return "market";
 }
 
 function retailerName(name, brand) {
   const key = logoKey(`${brand ?? ""} ${name ?? ""}`);
-  const names = { carrefour: "Carrefour", esselunga: "Esselunga", coop: "Coop", conad: "Conad", pam: "Pam", ins: "IN'S", ekom: "Ekom", mercato: "Mercatò", borello: "Borello", lidl: "Lidl", md: "MD", eurospin: "Eurospin", crai: "Crai" };
+  const names = { carrefour: "Carrefour", esselunga: "Esselunga", coop: "Coop", conad: "Conad", pam: "Pam", ins: "IN'S", ekom: "Ekom", mercato: "Mercatò", borello: "Borello", lidl: "Lidl", md: "MD", eurospin: "Eurospin", crai: "Crai", tigota: "Tigotà", action: "Action" };
   return names[key] ?? (brand || name || "Supermarket");
 }
 
@@ -72,7 +76,7 @@ async function discoverNearby(event) {
   const radiusKm = Math.min(25, Math.max(0.5, Number(event.payload.radiusKm ?? profile.rows[0]?.discovery_radius_km ?? 3)));
   const radiusMetres = Math.round(radiusKm * 1000);
   await pool.query(`UPDATE store_analysis_jobs SET status='running',started_at=COALESCE(started_at,now()),error=NULL WHERE id=$1`, [jobId]);
-  const query = `[out:json][timeout:30];(nwr[shop=supermarket](around:${radiusMetres},${latitude},${longitude});nwr[shop=convenience](around:${radiusMetres},${latitude},${longitude}););out center tags;`;
+  const query = `[out:json][timeout:30];(nwr[shop=supermarket](around:${radiusMetres},${latitude},${longitude});nwr[shop=convenience](around:${radiusMetres},${latitude},${longitude});nwr["brand"~"^(Tigotà|Tigota|Action)$",i](around:${radiusMetres},${latitude},${longitude});nwr["name"~"^(Tigotà|Tigota|Action)( |$)",i](around:${radiusMetres},${latitude},${longitude}););out center tags;`;
   const response = await fetch(OVERPASS_URL, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", "user-agent": "SpesaVicina/1.0 (nearby-store discovery)" }, body: new URLSearchParams({ data: query }), signal: AbortSignal.timeout(45_000) });
   if (!response.ok) throw new Error(`Nearby-store provider returned ${response.status}`);
   const data = await response.json();
@@ -161,7 +165,7 @@ async function scheduleDueAnalyses() {
   lastSweepAt = Date.now();
   const { rows } = await pool.query(`
     SELECT ps.profile_id,s.id FROM stores s JOIN profile_stores ps ON ps.store_id=s.id AND ps.selected=true
-    WHERE s.enabled=true AND lower(s.retailer) IN ('carrefour','esselunga','ekom','coop','lidl','in''s','ins','conad','md','pam','borello','crai','mercatò','mercato')
+    WHERE s.enabled=true AND lower(s.retailer) IN ('carrefour','esselunga','ekom','coop','lidl','in''s','ins','conad','md','pam','borello','crai','mercatò','mercato','tigotà','tigota','action')
       AND (s.offers_last_analyzed_at IS NULL OR s.offers_last_analyzed_at < now()-interval '6 hours')
       AND NOT EXISTS (SELECT 1 FROM store_analysis_jobs j WHERE j.profile_id=ps.profile_id AND j.store_id=s.id AND j.kind='offer_analysis' AND j.status IN ('queued','running'))
     LIMIT 10

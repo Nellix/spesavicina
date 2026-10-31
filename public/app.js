@@ -81,12 +81,14 @@ function retailerKey(retailer, preferred = "") {
   if (/\bmd\b/.test(name) || name.includes("md discount")) return "md";
   if (name.includes("eurospin")) return "eurospin";
   if (name.includes("crai")) return "crai";
+  if (name.includes("tigotà") || name.includes("tigota")) return "tigota";
+  if (/\baction\b/.test(name)) return "action";
   return "market";
 }
 
 function retailerLogo(retailer, large = false, preferred = "") {
   const key = retailerKey(retailer, preferred);
-  const marks = { carrefour: "C", esselunga: "ES", coop: "COOP", conad: "CONAD", pam: "PAM", ins: "IN'S", ekom: "EK", mercato: "M", borello: "B", lidl: "LIDL", md: "MD", eurospin: "EU", crai: "CR", market: "●" };
+  const marks = { carrefour: "C", esselunga: "ES", coop: "COOP", conad: "CONAD", pam: "PAM", ins: "IN'S", ekom: "EK", mercato: "M", borello: "B", lidl: "LIDL", md: "MD", eurospin: "EU", crai: "CR", tigota: "T", action: "A", market: "●" };
   const logos = {
     carrefour: "/logo-carrefour.svg",
     esselunga: "/logo-esselunga.svg",
@@ -99,6 +101,8 @@ function retailerLogo(retailer, large = false, preferred = "") {
     borello: "https://borellosupermercati.it/wp-content/uploads/2026/08/logo_borello_marchio_footer.svg",
     crai: "https://crai.it/_next/static/media/logo-2025.56672a8b.png",
     mercato: "https://static.mymercato.it/dam/jcr:9788305f-d722-43b0-8187-5664f5ba59a1/Logo=Mercat%C3%B2.svg",
+    tigota: "https://www.tigota.it/_next/static/media/tigota.66987120.svg",
+    action: "https://www.action.com/favicons/favicon.ico",
   };
   const logo = logos[key];
   const logoSrc = logo?.startsWith("https://") ? `/api/product-image?url=${encodeURIComponent(logo)}` : logo;

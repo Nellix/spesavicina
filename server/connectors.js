@@ -210,6 +210,144 @@ function packFromTitle(title = "") {
   return matches.at(-1)?.[0] ?? "";
 }
 
+function promotionRange(value = "", now = new Date()) {
+  const match = String(value).match(/(\d{1,2})\/(\d{1,2})\s*(?:-|–|al)\s*(\d{1,2})\/(\d{1,2})/i);
+  if (!match) return { validFrom: null, validUntil: null };
+  const [, startDay, startMonth, endDay, endMonth] = match.map(Number);
+  let startYear = now.getUTCFullYear();
+  const currentMonth = now.getUTCMonth() + 1;
+  if (startMonth - currentMonth > 6) startYear -= 1;
+  if (currentMonth - startMonth > 6) startYear += 1;
+  const endYear = startYear + (endMonth < startMonth ? 1 : 0);
+  const format = (year, month, day) => `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  return { validFrom: format(startYear, startMonth, startDay), validUntil: format(endYear, endMonth, endDay) };
+}
+
+function nextData(html) {
+  const encoded = String(html).match(/<script[^>]+id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i)?.[1];
+  if (!encoded) return null;
+  try { return JSON.parse(encoded); } catch { return null; }
+}
+
+function tigotaValidity(html, now = new Date()) {
+  const label = decodeHtml(String(html).match(/alt=["']([^"']*Prodotti in sconto dal[^"']*)["']/i)?.[1] ?? "");
+  return promotionRange(label, now);
+}
+
+export function parseTigotaPage(html, storeId = "tigota", sourceUrl = "", now = new Date()) {
+  const data = nextData(html);
+  const products = data?.props?.pageProps?.products;
+  const validity = tigotaValidity(html, now);
+  const offers = [];
+  for (const item of products?.items ?? []) {
+    const priceData = item?.price_range?.minimum_price;
+    const price = Number(priceData?.final_price?.value);
+    const listPrice = Number(priceData?.regular_price?.value);
+    const discount = Number(priceData?.discount?.amount_off ?? (listPrice - price));
+    if (!item?.sku || !item?.name || !Number.isFinite(price) || price <= 0 || !Number.isFinite(listPrice) || discount <= 0) continue;
+    const brand = normalizedText(item.manufacturer_value) || inferStructuredBrand(item.name);
+    if (!brand) continue;
+    const productUrl = item.url_key ? new URL(`/p/${item.url_key}`, sourceUrl || "https://www.tigota.it/offerte-online").href : sourceUrl;
+    const packSize = packFromTitle(item.name) || (Number(item.weight) > 0 && item.um_vendita ? `${Number(item.weight)} ${String(item.um_vendita).toLowerCase()}` : "");
+    offers.push({
+      sourceId: `tigota-${slug(storeId)}-${item.sku}`,
+      retailer: "Tigotà",
+      storeId,
+      productName: normalizedText(item.name),
+      brand,
+      variant: "",
+      packSize,
+      price,
+      listPrice: listPrice > price ? listPrice : null,
+      unitPrice: normalizedText(item.price_measure),
+      condition: "Online promotion; check pickup and in-store availability",
+      ...validity,
+      sourceUrl: productUrl,
+      identifiers: [{ scheme: "retailer_sku", retailer: "Tigotà", value: String(item.sku) }],
+      sourceEvidence: { imageUrl: item.small_image?.url ?? "", parser: "tigota-next-data-v1", sourceScope: "online-promotion" },
+      confidence: 0.98,
+      status: "approved",
+    });
+  }
+  return {
+    offers,
+    pageInfo: {
+      currentPage: Number(products?.page_info?.current_page ?? 1),
+      totalPages: Number(products?.page_info?.total_pages ?? 1),
+      totalCount: Number(products?.total_count ?? offers.length),
+    },
+  };
+}
+
+function balancedObject(source, start) {
+  let depth = 0; let inString = false; let escaped = false;
+  for (let index = start; index < source.length; index += 1) {
+    const character = source[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === '"') inString = false;
+    } else if (character === '"') inString = true;
+    else if (character === "{") depth += 1;
+    else if (character === "}" && --depth === 0) return source.slice(start, index + 1);
+  }
+  return "";
+}
+
+function actionFlightPayloads(html) {
+  const payloads = [];
+  for (const match of String(html).matchAll(/self\.__next_f\.push\(\[1,("(?:\\.|[^"\\])*")\]\)/g)) {
+    try { payloads.push(JSON.parse(match[1])); } catch { /* Ignore unrelated or truncated flight chunks. */ }
+  }
+  return payloads;
+}
+
+export function parseActionPage(html, storeId = "action", sourceUrl = "", now = new Date()) {
+  const offers = [];
+  const seen = new Set();
+  for (const payload of actionFlightPayloads(html)) {
+    let cursor = 0;
+    while ((cursor = payload.indexOf('"product":', cursor)) >= 0) {
+      const start = payload.indexOf("{", cursor + 10);
+      const encoded = start >= 0 ? balancedObject(payload, start) : "";
+      cursor = start + Math.max(encoded.length, 1);
+      if (!encoded) continue;
+      let item;
+      try { item = JSON.parse(encoded); } catch { continue; }
+      const price = Number(item.price?.current?.amount);
+      const listPrice = Number(item.price?.original?.amount);
+      if (!item.id || seen.has(String(item.id)) || !item.isDeal || !Number.isFinite(price) || price <= 0) continue;
+      seen.add(String(item.id));
+      const brand = normalizedText(item.brand) || inferStructuredBrand(item.title);
+      if (!brand) continue;
+      const validityText = item.stickers?.find((sticker) => sticker.code === "IS_DEAL")?.subValue ?? "";
+      const validity = promotionRange(validityText, now);
+      const description = normalizedText(item.description);
+      offers.push({
+        sourceId: `action-${slug(storeId)}-${item.id}`,
+        retailer: "Action",
+        storeId,
+        productName: normalizedText(item.title),
+        brand,
+        variant: description,
+        packSize: packFromTitle(description) || packFromTitle(item.title),
+        price,
+        listPrice: Number.isFinite(listPrice) && listPrice > price ? listPrice : null,
+        unitPrice: normalizedText(item.price?.unitInfo?.formatted),
+        condition: "Weekly promotion; while stocks last",
+        ...validity,
+        sourceUrl: item.href || sourceUrl,
+        identifiers: [{ scheme: "retailer_sku", retailer: "Action", value: String(item.code ?? item.id) }],
+        sourceEvidence: { imageUrl: item.image ?? item.assets?.[0] ?? "", parser: "action-next-flight-v1" },
+        confidence: 0.98,
+        status: "approved",
+      });
+    }
+  }
+  const pageNumbers = [...String(html).matchAll(/[?&]page=(\d+)/g)].map((match) => Number(match[1])).filter(Number.isFinite);
+  return { offers, totalPages: Math.max(1, ...pageNumbers) };
+}
+
 export function parseEsselungaApi(payload, storeId = "esselunga-porta-nuova", sourceUrl = "") {
   const rows = Array.isArray(payload?.items) ? payload.items : Array.isArray(payload?.data?.items) ? payload.data.items : [];
   const offers = [];
@@ -675,6 +813,52 @@ function ocrOfferText(text = "") {
 export async function fetchLiveOffers(env = process.env) {
   const results = [];
   const diagnostics = [];
+
+  if (env.TIGOTA_OFFERS_URL) {
+    const headers = { "user-agent": "SpesaVicina/1.0 (+local grocery offer pilot)" };
+    const firstResponse = await fetch(env.TIGOTA_OFFERS_URL, { headers, signal: AbortSignal.timeout(30_000) });
+    if (!firstResponse.ok) throw new Error(`Tigotà offers page returned ${firstResponse.status}`);
+    const first = parseTigotaPage(await firstResponse.text(), env.TIGOTA_STORE_ID ?? "tigota", env.TIGOTA_OFFERS_URL);
+    results.push(...first.offers);
+    let page = 2;
+    const workerCount = Math.min(6, Math.max(0, first.pageInfo.totalPages - 1));
+    await Promise.all(Array.from({ length: workerCount }, async () => {
+      while (page <= Math.min(first.pageInfo.totalPages, 100)) {
+        const currentPage = page; page += 1;
+        const pageUrl = new URL(env.TIGOTA_OFFERS_URL);
+        pageUrl.pathname = `${pageUrl.pathname.replace(/\/page\/\d+\/?$/, "").replace(/\/$/, "")}/page/${currentPage}`;
+        const response = await fetch(pageUrl, { headers, signal: AbortSignal.timeout(30_000) });
+        if (!response.ok) throw new Error(`Tigotà offers page ${currentPage} returned ${response.status}`);
+        results.push(...parseTigotaPage(await response.text(), env.TIGOTA_STORE_ID ?? "tigota", pageUrl.href).offers);
+      }
+    }));
+    diagnostics.push({ retailer: "Tigotà", count: results.length, sourceUrl: env.TIGOTA_OFFERS_URL, parser: "structured-online-promotions", sourceScope: "online-promotion", pages: first.pageInfo.totalPages });
+  }
+
+  if (env.ACTION_OFFERS_URL) {
+    const headers = { "user-agent": "SpesaVicina/1.0 (+local grocery offer pilot)", accept: "text/html,application/xhtml+xml" };
+    const firstResponse = await fetch(env.ACTION_OFFERS_URL, { headers, signal: AbortSignal.timeout(30_000) });
+    if ([401, 403, 429].includes(firstResponse.status)) {
+      diagnostics.push({ retailer: "Action", count: 0, status: "source_access_restricted", sourceUrl: env.ACTION_OFFERS_URL, parser: "structured-weekly-promotions" });
+    } else {
+      if (!firstResponse.ok) throw new Error(`Action weekly offers page returned ${firstResponse.status}`);
+      const first = parseActionPage(await firstResponse.text(), env.ACTION_STORE_ID ?? "action", env.ACTION_OFFERS_URL);
+      results.push(...first.offers);
+      let page = 2;
+      const workerCount = Math.min(4, Math.max(0, first.totalPages - 1));
+      await Promise.all(Array.from({ length: workerCount }, async () => {
+        while (page <= Math.min(first.totalPages, 20)) {
+          const currentPage = page; page += 1;
+          const pageUrl = new URL(env.ACTION_OFFERS_URL); pageUrl.searchParams.set("page", String(currentPage));
+          const response = await fetch(pageUrl, { headers, signal: AbortSignal.timeout(30_000) });
+          if ([401, 403, 429].includes(response.status)) continue;
+          if (!response.ok) throw new Error(`Action weekly offers page ${currentPage} returned ${response.status}`);
+          results.push(...parseActionPage(await response.text(), env.ACTION_STORE_ID ?? "action", pageUrl.href).offers);
+        }
+      }));
+      diagnostics.push({ retailer: "Action", count: results.length, sourceUrl: env.ACTION_OFFERS_URL, parser: "structured-weekly-promotions", pages: first.totalPages, ...(results.length ? {} : { status: "no_searchable_products" }) });
+    }
+  }
 
   if (env.LIDL_OFFERS_URL) {
     const response = await fetch(env.LIDL_OFFERS_URL, { headers: { "user-agent": "SpesaVicina/1.0 (+local grocery offer pilot)" }, signal: AbortSignal.timeout(30_000) });

@@ -25,6 +25,8 @@ The Kubernetes deployment contains independently operated services in the single
 - `ekom-ingestor`: isolated Ekom leaflet API adapter;
 - `coop-ingestor`: isolated store-specific Coop digital-flyer adapter;
 - `lidl-ingestor`: Lidl Italy product-grid adapter with Piemonte regional prices and Lidl Plus conditions;
+- `tigota-ingestor`: Tigotà structured online-promotion adapter with product images, exact SKUs, and store-pickup availability caveats;
+- `action-ingestor`: Action Italy structured weekly-promotion adapter with product images, discount prices, and promotion dates;
 - `ins`, `conad`, `md`, `pam`, `borello`, `crai`, and `mercato` ingestors: isolated official-flyer adapters used for selected nearby stores;
 - `spesavicina-postgres`: PostgreSQL 16 managed by the cluster's Zalando operator;
 - retailer CronJobs plus the store-analysis worker's six-hour selected-store refresh.
@@ -131,7 +133,7 @@ Origin validation accepts the configured public origin or an origin whose host m
 
 ## Retailer sources
 
-Carrefour store pages discovered through OpenStreetMap are converted to their official store-specific flyer URLs. The connector reads current HTML offer tiles directly and sends high-confidence branded records to matching; ambiguous records are quarantined for review. Esselunga uses its digital-grid feed, Ekom uses its official leaflet API, Coop resolves the selected store's current digital flyer and structured product details, and Lidl reads the official structured product grid using the configured regional price. IN'S, Conad, MD, Pam, Borello, CRAI, and Mercatò resolve retailer-owned store/flyer pages and extract recognizable branded products from the current official PDF. An unavailable store-specific source is reported to the user and retried later.
+Carrefour store pages discovered through OpenStreetMap are converted to their official store-specific flyer URLs. The connector reads current HTML offer tiles directly and sends high-confidence branded records to matching; ambiguous records are quarantined for review. Esselunga uses its digital-grid feed, Ekom uses its official leaflet API, Coop resolves the selected store's current digital flyer and structured product details, and Lidl reads the official structured product grid using the configured regional price. Tigotà reads its official structured online-promotion catalogue and explicitly labels pickup/in-store availability as a condition. Action reads its official weekly promotion grid; if the retailer's edge protection rejects server-side access, the run records `source_access_restricted` instead of publishing incomplete data. IN'S, Conad, MD, Pam, Borello, CRAI, and Mercatò resolve retailer-owned store/flyer pages and extract recognizable branded products from the current official PDF. An unavailable store-specific source is reported to the user and retried later.
 
 Every successful non-empty source run is treated as a complete snapshot for that retailer/store. Records not seen again are marked expired while remaining searchable as promotion history. This prevents undated flyer products from remaining current indefinitely.
 

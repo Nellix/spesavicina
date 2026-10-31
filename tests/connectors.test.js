@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { discoverOfficialFlyer, parseCarrefourHtml, parseCarrefourText, parseCoopProductDetails, parseEkomLeaflet, parseEsselungaApi, parseEsselungaHtml, parseLidlHtml, parseOfficialFlyerText } from "../server/connectors.js";
+import { discoverOfficialFlyer, parseActionPage, parseCarrefourHtml, parseCarrefourText, parseCoopProductDetails, parseEkomLeaflet, parseEsselungaApi, parseEsselungaHtml, parseLidlHtml, parseOfficialFlyerText, parseTigotaPage } from "../server/connectors.js";
 
 test("Esselunga connector extracts structured product offers", () => {
   const html = `<script type="application/ld+json">{"@type":"Product","name":"Yogurt intero Brimi","brand":{"name":"Brimi"},"size":"2 x 125 g","offers":{"price":"1.19","highPrice":"1.79","priceValidUntil":"2026-10-01","eligibleCustomerType":"Fidaty"}}</script>`;
@@ -109,6 +109,50 @@ test("Lidl official product grid selects the configured regional price and valid
   assert.equal(offers[0].validFrom, "2026-10-01");
   assert.equal(offers[0].validUntil, "2026-10-07");
   assert.equal(offers[0].sourceEvidence.regionName, "Biandrate - Piemonte");
+});
+
+test("Tigotà structured promotion pages preserve SKU, image, price and promotion dates", () => {
+  const product = {
+    sku: "222277", url_key: "biolis-sapone-222277", name: "Biolis Sapone Liquido Costa Sole 300 ml",
+    small_image: { url: "https://mcprod.tigota.it/media/catalog/product/biolis.jpg" },
+    price_range: { minimum_price: { regular_price: { value: 2.99 }, final_price: { value: 2.5 }, discount: { amount_off: 0.49 } } },
+    manufacturer_value: "BIOLIS", price_measure: "8.33/LT", weight: 300, um_vendita: "ML",
+  };
+  const next = { props: { pageProps: { products: { total_count: 25, page_info: { current_page: 1, total_pages: 2 }, items: [product] } } } };
+  const html = `<img alt="Prodotti in sconto dal 01/10 al 31/10"><script id="__NEXT_DATA__" type="application/json">${JSON.stringify(next)}</script>`;
+  const page = parseTigotaPage(html, "store-tigota", "https://www.tigota.it/offerte-online", new Date("2026-10-15T00:00:00Z"));
+  assert.equal(page.pageInfo.totalPages, 2);
+  assert.equal(page.offers.length, 1);
+  assert.equal(page.offers[0].retailer, "Tigotà");
+  assert.equal(page.offers[0].sourceId, "tigota-store-tigota-222277");
+  assert.equal(page.offers[0].price, 2.5);
+  assert.equal(page.offers[0].listPrice, 2.99);
+  assert.equal(page.offers[0].packSize, "300 ml");
+  assert.equal(page.offers[0].validUntil, "2026-10-31");
+  assert.equal(page.offers[0].sourceEvidence.imageUrl, "https://mcprod.tigota.it/media/catalog/product/biolis.jpg");
+});
+
+test("Action weekly promotion payload extracts exact deal evidence", () => {
+  const product = {
+    id: "2551185", code: "2551185", href: "https://www.action.com/it-it/p/2551185/boxer-ziki/",
+    title: "Boxer Ziki", description: "Taglia M | 2 pezzi", brand: "Ziki", isDeal: true,
+    image: "https://asset.action.com/image/upload/2551185_example",
+    price: { current: { amount: 3.49 }, original: { amount: 3.99 }, unitInfo: { formatted: "1,75 €/pz" } },
+    stickers: [{ code: "IS_DEAL", value: "Promozione", subValue: "28/10 - 03/11" }],
+  };
+  const flight = `7a:["$","card",null,{"product":${JSON.stringify(product)}}]`;
+  const html = `<script>self.__next_f.push([1,${JSON.stringify(flight)}])</script><a href="?page=8#product-grid">8</a>`;
+  const page = parseActionPage(html, "store-action", "https://www.action.com/it-it/promozione-settimanale/", new Date("2026-10-31T00:00:00Z"));
+  assert.equal(page.totalPages, 8);
+  assert.equal(page.offers.length, 1);
+  assert.equal(page.offers[0].retailer, "Action");
+  assert.equal(page.offers[0].brand, "Ziki");
+  assert.equal(page.offers[0].price, 3.49);
+  assert.equal(page.offers[0].listPrice, 3.99);
+  assert.equal(page.offers[0].packSize, "2 pezzi");
+  assert.equal(page.offers[0].validFrom, "2026-10-28");
+  assert.equal(page.offers[0].validUntil, "2026-11-03");
+  assert.equal(page.offers[0].sourceEvidence.imageUrl, "https://asset.action.com/image/upload/2551185_example");
 });
 
 test("Conad official store page resolves its current flyer and validity", () => {

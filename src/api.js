@@ -15,7 +15,7 @@ const SERVICE_TOKEN = process.env.SERVICE_TOKEN ?? "development-only";
 const SESSION_COOKIE = "spesavicina_session";
 const OAUTH_COOKIE = "spesavicina_oauth_state";
 const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI ?? new URL("/api/auth/google/callback", BASE_URL).href;
-const INGESTOR_URLS = String(process.env.INGESTOR_URLS ?? "http://carrefour-ingestor/run,http://esselunga-ingestor/run,http://ekom-ingestor/run,http://coop-ingestor/run,http://lidl-ingestor/run,http://ins-ingestor/run,http://conad-ingestor/run,http://md-ingestor/run,http://pam-ingestor/run,http://borello-ingestor/run,http://crai-ingestor/run,http://mercato-ingestor/run").split(",").map((value) => value.trim()).filter(Boolean);
+const INGESTOR_URLS = String(process.env.INGESTOR_URLS ?? "http://carrefour-ingestor/run,http://esselunga-ingestor/run,http://ekom-ingestor/run,http://coop-ingestor/run,http://lidl-ingestor/run,http://ins-ingestor/run,http://conad-ingestor/run,http://md-ingestor/run,http://pam-ingestor/run,http://borello-ingestor/run,http://crai-ingestor/run,http://mercato-ingestor/run,http://tigota-ingestor/run,http://action-ingestor/run").split(",").map((value) => value.trim()).filter(Boolean);
 const startedAt = Date.now();
 const metrics = { requests: 0, errors: 0, ingestions: 0 };
 
@@ -25,7 +25,7 @@ const staticFiles = new Map(assetNames.map((name) => [name, readFileSync(join(PU
 let ekomLogoCache = null;
 const productImageCache = new Map();
 const authAttempts = new Map();
-const PRODUCT_IMAGE_HOSTS = new Set(["gdodig-car.youroperator.it", "images.services.esselunga.it", "app.ekomdiscount.it", "resources.volantinopiu.it", "www.coop.it", "www.lidl.it", "www.conad.it", "cdn.dimar.it", "strapi.crai.it", "crai.it", "www.mdspa.it", "www.insmercato.it", "borellosupermercati.it", "www.pampanorama.it", "static.mymercato.it"]);
+const PRODUCT_IMAGE_HOSTS = new Set(["gdodig-car.youroperator.it", "images.services.esselunga.it", "app.ekomdiscount.it", "resources.volantinopiu.it", "www.coop.it", "www.lidl.it", "www.conad.it", "cdn.dimar.it", "strapi.crai.it", "crai.it", "www.mdspa.it", "www.insmercato.it", "borellosupermercati.it", "www.pampanorama.it", "static.mymercato.it", "mcprod.tigota.it", "www.tigota.it", "asset.action.com", "www.action.com"]);
 
 function json(response, status, value, headers = {}) {
   response.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...headers });
@@ -76,12 +76,12 @@ async function requireAdmin(request) {
   return user;
 }
 
-async function body(request) {
+async function body(request, maxBytes = 1_000_000) {
   const chunks = [];
   let size = 0;
   for await (const chunk of request) {
     size += chunk.length;
-    if (size > 1_000_000) throw Object.assign(new Error("Request body too large"), { status: 413 });
+    if (size > maxBytes) throw Object.assign(new Error("Request body too large"), { status: 413 });
     chunks.push(chunk);
   }
   if (!chunks.length) return {};
@@ -108,7 +108,7 @@ function requireService(request) {
 
 async function triggerIngestors() {
   const results = await Promise.allSettled(INGESTOR_URLS.map(async (url) => {
-    const response = await fetch(url, { method: "POST", headers: { authorization: `Bearer ${SERVICE_TOKEN}` }, signal: AbortSignal.timeout(120_000) });
+    const response = await fetch(url, { method: "POST", headers: { authorization: `Bearer ${SERVICE_TOKEN}` }, signal: AbortSignal.timeout(360_000) });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(`${url}: ${data.error ?? response.status}`);
     return data;
@@ -148,7 +148,7 @@ async function api(request, response, url) {
 
   if (request.method === "POST" && url.pathname === "/internal/ingestions/offers") {
     requireService(request);
-    const input = await body(request);
+    const input = await body(request, 5_000_000);
     if (!Array.isArray(input.offers)) return json(response, 422, { error: "offers must be an array" });
     metrics.ingestions += 1;
     return json(response, 202, await ingestOffers(input.offers, String(input.source ?? "unknown"), input.diagnostics ?? [], input.snapshot ?? {}));

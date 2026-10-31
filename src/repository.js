@@ -305,7 +305,7 @@ export async function seedData() {
           latitude=EXCLUDED.latitude,longitude=EXCLUDED.longitude,distance_km=EXCLUDED.distance_km,source_type=EXCLUDED.source_type,
           logo_key=EXCLUDED.logo_key,source_url=COALESCE(stores.source_url,EXCLUDED.source_url)
       `, [store.id, store.retailer, store.name, store.address, store.latitude, store.longitude, store.distanceKm, store.sourceType, store.logoKey ?? "market", store.sourceUrl ?? null]);
-      await client.query(`INSERT INTO profile_stores(profile_id,store_id,selected) VALUES (1,$1,true) ON CONFLICT DO NOTHING`, [store.id]);
+      if (store.sourceType !== "catalogue") await client.query(`INSERT INTO profile_stores(profile_id,store_id,selected) VALUES (1,$1,true) ON CONFLICT DO NOTHING`, [store.id]);
     }
     for (const product of CANONICAL_PRODUCTS) await upsertProduct(client, product);
     const watchCount = await client.query(`SELECT count(*)::int AS count FROM watch_items WHERE profile_id=1`);

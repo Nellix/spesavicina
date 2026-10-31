@@ -3,7 +3,7 @@ import { fetchLiveOffers } from "../../server/connectors.js";
 
 const RETAILER = String(process.env.RETAILER ?? "").toLowerCase();
 const FLYER_RETAILERS = new Set(["ins", "conad", "md", "pam", "borello", "crai", "mercato"]);
-if (!["carrefour", "esselunga", "ekom", "coop", "lidl", ...FLYER_RETAILERS].includes(RETAILER)) throw new Error("Unsupported RETAILER");
+if (!["carrefour", "esselunga", "ekom", "coop", "lidl", "tigota", "action", ...FLYER_RETAILERS].includes(RETAILER)) throw new Error("Unsupported RETAILER");
 const SERVICE = `${RETAILER}-ingestor`;
 const PORT = Number(process.env.PORT ?? 8080);
 const API_URL = process.env.API_URL ?? "http://spesavicina-api";
@@ -44,6 +44,8 @@ function officialFlyerSource(retailer, storeUrl) {
     borello: /borellosupermercati\.it\/volantino\//i,
     crai: /crai\.it\/negozi-e-volantini\//i,
     mercato: /mymercato\.it\/punti-vendita\//i,
+    tigota: /tigota\.it\/negozi\//i,
+    action: /action\.com\/it-it\/negozi\//i,
   };
   return patterns[retailer]?.test(storeUrl) ? storeUrl : "";
 }
@@ -60,7 +62,11 @@ async function runIngestion(store = null) {
           ? (store?.sourceUrl?.includes("coop.it") ? store.sourceUrl : process.env.COOP_STORE_URL ?? "")
           : RETAILER === "lidl"
             ? (process.env.LIDL_OFFERS_URL || "https://www.lidl.it/c/c1150")
-            : (officialFlyerSource(RETAILER, store?.sourceUrl) || process.env[`${RETAILER.toUpperCase()}_FLYER_URL`] || "");
+            : RETAILER === "tigota"
+              ? (process.env.TIGOTA_OFFERS_URL || "https://www.tigota.it/offerte-online")
+              : RETAILER === "action"
+                ? (process.env.ACTION_OFFERS_URL || "https://www.action.com/it-it/promozione-settimanale/")
+                : (officialFlyerSource(RETAILER, store?.sourceUrl) || process.env[`${RETAILER.toUpperCase()}_FLYER_URL`] || "");
   const env = RETAILER === "carrefour"
     ? { CARREFOUR_FLYER_URL: sourceUrl, CARREFOUR_STORE_ID: store?.id ?? process.env.CARREFOUR_STORE_ID }
     : RETAILER === "esselunga"
@@ -71,11 +77,15 @@ async function runIngestion(store = null) {
           ? { COOP_STORE_URL: sourceUrl, COOP_STORE_ID: store?.id ?? process.env.COOP_STORE_ID }
           : RETAILER === "lidl"
             ? { LIDL_OFFERS_URL: sourceUrl, LIDL_STORE_ID: store?.id ?? process.env.LIDL_STORE_ID, LIDL_REGION_ID: process.env.LIDL_REGION_ID || "41000" }
-            : {
+            : RETAILER === "tigota"
+              ? { TIGOTA_OFFERS_URL: sourceUrl, TIGOTA_STORE_ID: store?.id ?? process.env.TIGOTA_STORE_ID ?? "tigota" }
+              : RETAILER === "action"
+                ? { ACTION_OFFERS_URL: sourceUrl, ACTION_STORE_ID: store?.id ?? process.env.ACTION_STORE_ID ?? "action" }
+                : {
                 FLYER_RETAILER: RETAILER,
                 FLYER_SOURCE_URL: sourceUrl,
                 FLYER_STORE_ID: store?.id ?? process.env[`${RETAILER.toUpperCase()}_STORE_ID`] ?? RETAILER,
-              };
+                  };
   env.OCR_URL = process.env.OCR_URL ?? "";
   env.OCR_REQUEST_TIMEOUT_MS = process.env.OCR_REQUEST_TIMEOUT_MS ?? "900000";
   env.SERVICE_TOKEN = SERVICE_TOKEN;
@@ -86,7 +96,7 @@ async function runIngestion(store = null) {
     result = await fetchLiveOffers(env);
   }
   const completeSnapshot = result.offers.length > 0 && !result.diagnostics.some((item) => item.status);
-  const configured = Boolean(sourceUrl) && !result.diagnostics.some((item) => item.status === "credentials_missing" || item.status === "source_not_discovered");
+  const configured = Boolean(sourceUrl) && !result.diagnostics.some((item) => ["credentials_missing", "source_not_discovered", "source_access_restricted"].includes(item.status));
   const response = await fetch(`${API_URL}/internal/ingestions/offers`, {
     method: "POST",
     headers: { authorization: `Bearer ${SERVICE_TOKEN}`, "content-type": "application/json" },
@@ -96,7 +106,7 @@ async function runIngestion(store = null) {
       diagnostics: result.diagnostics,
       snapshot: { complete: completeSnapshot, retailer: result.offers[0]?.retailer ?? RETAILER, storeIds: [...new Set(result.offers.map((offer) => offer.storeId).filter(Boolean))] },
     }),
-    signal: AbortSignal.timeout(120_000),
+    signal: AbortSignal.timeout(300_000),
   });
   const saved = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(`API ingestion failed: ${saved.error ?? response.status}`);
