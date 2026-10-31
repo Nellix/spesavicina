@@ -170,6 +170,8 @@ input:focus { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(15,129,113,.
 .brand-crai { background: #1266a8; color: #fff; }
 .brand-tigota { background: #4b2b82; color: #fff; }
 .brand-action { background: #001489; color: #fff; }
+.brand-iperbimbo { background: #f28c28; color: #fff; }
+.brand-prenatal { background: #e6007e; color: #fff; }
 .brand-market { background: #6a746b; color: #fff; }
 .store-logo-large[class*="brand-"] { font-size: 11px; letter-spacing: -.04em; padding: 5px; text-align: center; }
 .retailer span { min-width: 0; display: grid; }

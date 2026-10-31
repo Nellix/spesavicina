@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { discoverOfficialFlyer, parseActionPage, parseCarrefourHtml, parseCarrefourText, parseCoopProductDetails, parseEkomLeaflet, parseEsselungaApi, parseEsselungaHtml, parseLidlHtml, parseOfficialFlyerText, parseTigotaPage } from "../server/connectors.js";
+import { discoverOfficialFlyer, discoverPrenatalPdf, discoverPrenatalViewer, italianFlyerValidity, parseActionPage, parseCarrefourHtml, parseCarrefourText, parseCoopProductDetails, parseEkomLeaflet, parseEsselungaApi, parseEsselungaHtml, parseIperbimboProducts, parseLidlHtml, parseOfficialFlyerText, parseTigotaPage } from "../server/connectors.js";
 
 test("Esselunga connector extracts structured product offers", () => {
   const html = `<script type="application/ld+json">{"@type":"Product","name":"Yogurt intero Brimi","brand":{"name":"Brimi"},"size":"2 x 125 g","offers":{"price":"1.19","highPrice":"1.79","priceValidUntil":"2026-10-01","eligibleCustomerType":"Fidaty"}}</script>`;
@@ -153,6 +153,36 @@ test("Action weekly promotion payload extracts exact deal evidence", () => {
   assert.equal(page.offers[0].validFrom, "2026-10-28");
   assert.equal(page.offers[0].validUntil, "2026-11-03");
   assert.equal(page.offers[0].sourceEvidence.imageUrl, "https://asset.action.com/image/upload/2551185_example");
+});
+
+test("Iperbimbo Shopify products include only real compare-at promotions", () => {
+  const payload = { products: [{ id: 10, title: "Pampers Progressi Midi 28 pannolini", handle: "pampers-progressi-midi", vendor: "Pampers", images: [{ src: "https://cdn.shopify.com/pampers.jpg" }], variants: [
+    { id: 101, title: "Default Title", sku: "PMP-28", price: "8.90", compare_at_price: "12.90", available: true },
+    { id: 102, title: "Scorta", price: "24.90", compare_at_price: "24.90", available: true },
+  ] }] };
+  const offers = parseIperbimboProducts(payload, "iperbimbo-torino", "https://www.iperbimbo.it/products.json?limit=250");
+  assert.equal(offers.length, 1);
+  assert.equal(offers[0].retailer, "Iperbimbo");
+  assert.equal(offers[0].sourceId, "iperbimbo-iperbimbo-torino-10-101");
+  assert.equal(offers[0].brand, "Pampers");
+  assert.equal(offers[0].price, 8.9);
+  assert.equal(offers[0].listPrice, 12.9);
+  assert.equal(offers[0].sourceEvidence.imageUrl, "https://cdn.shopify.com/pampers.jpg");
+});
+
+test("Prénatal catalogue discovery resolves Publitas PDF and Italian validity", () => {
+  const viewer = discoverPrenatalViewer(`<a href="https://catalogo.prenatal.com/pnt_volantino-autunno_web/">Apri</a>`, "https://www.prenatal.com/catalog/");
+  assert.equal(viewer, "https://catalogo.prenatal.com/pnt_volantino-autunno_web/");
+  const pdf = discoverPrenatalPdf(`<script>window.config={"downloadPdfUrl":"https:\\/\\/view.publitas.com\\/94\\/3422206\\/pdfs\\/current.pdf?x=1&amp;y=2"}</script>`, viewer);
+  assert.equal(pdf, "https://view.publitas.com/94/3422206/pdfs/current.pdf?x=1&y=2");
+  const validity = italianFlyerValidity("VOLANTINO VALIDO DALL’8 OTTOBRE AL 10 NOVEMBRE", new Date("2026-10-31T00:00:00Z"));
+  assert.deepEqual(validity, { validFrom: "2026-10-08", validUntil: "2026-11-10" });
+  const offers = parseOfficialFlyerText("PASSEGGINO CHICCO BELLAGIO 899,00 €", "prenatal", "prenatal-italy", pdf, validity);
+  assert.equal(offers.length, 1);
+  assert.equal(offers[0].retailer, "Prénatal");
+  assert.equal(offers[0].brand, "Chicco");
+  assert.equal(offers[0].price, 899);
+  assert.equal(offers[0].validUntil, "2026-11-10");
 });
 
 test("Conad official store page resolves its current flyer and validity", () => {

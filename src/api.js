@@ -15,7 +15,7 @@ const SERVICE_TOKEN = process.env.SERVICE_TOKEN ?? "development-only";
 const SESSION_COOKIE = "spesavicina_session";
 const OAUTH_COOKIE = "spesavicina_oauth_state";
 const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI ?? new URL("/api/auth/google/callback", BASE_URL).href;
-const INGESTOR_URLS = String(process.env.INGESTOR_URLS ?? "http://carrefour-ingestor/run,http://esselunga-ingestor/run,http://ekom-ingestor/run,http://coop-ingestor/run,http://lidl-ingestor/run,http://ins-ingestor/run,http://conad-ingestor/run,http://md-ingestor/run,http://pam-ingestor/run,http://borello-ingestor/run,http://crai-ingestor/run,http://mercato-ingestor/run,http://tigota-ingestor/run,http://action-ingestor/run").split(",").map((value) => value.trim()).filter(Boolean);
+const INGESTOR_URLS = String(process.env.INGESTOR_URLS ?? "http://carrefour-ingestor/run,http://esselunga-ingestor/run,http://ekom-ingestor/run,http://coop-ingestor/run,http://lidl-ingestor/run,http://ins-ingestor/run,http://conad-ingestor/run,http://md-ingestor/run,http://pam-ingestor/run,http://borello-ingestor/run,http://crai-ingestor/run,http://mercato-ingestor/run,http://tigota-ingestor/run,http://action-ingestor/run,http://iperbimbo-ingestor/run,http://prenatal-ingestor/run").split(",").map((value) => value.trim()).filter(Boolean);
 const startedAt = Date.now();
 const metrics = { requests: 0, errors: 0, ingestions: 0 };
 
@@ -25,7 +25,7 @@ const staticFiles = new Map(assetNames.map((name) => [name, readFileSync(join(PU
 let ekomLogoCache = null;
 const productImageCache = new Map();
 const authAttempts = new Map();
-const PRODUCT_IMAGE_HOSTS = new Set(["gdodig-car.youroperator.it", "images.services.esselunga.it", "app.ekomdiscount.it", "resources.volantinopiu.it", "www.coop.it", "www.lidl.it", "www.conad.it", "cdn.dimar.it", "strapi.crai.it", "crai.it", "www.mdspa.it", "www.insmercato.it", "borellosupermercati.it", "www.pampanorama.it", "static.mymercato.it", "mcprod.tigota.it", "www.tigota.it", "asset.action.com", "www.action.com"]);
+const PRODUCT_IMAGE_HOSTS = new Set(["gdodig-car.youroperator.it", "images.services.esselunga.it", "app.ekomdiscount.it", "resources.volantinopiu.it", "www.coop.it", "www.lidl.it", "www.conad.it", "cdn.dimar.it", "strapi.crai.it", "crai.it", "www.mdspa.it", "www.insmercato.it", "borellosupermercati.it", "www.pampanorama.it", "static.mymercato.it", "mcprod.tigota.it", "www.tigota.it", "asset.action.com", "www.action.com", "cdn.shopify.com", "www.iperbimbo.it", "media.prenatal-it.prenatal-services.com", "cdn.prenatal.com", "view.publitas.com", "catalogo.prenatal.com"]);
 
 function json(response, status, value, headers = {}) {
   response.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...headers });

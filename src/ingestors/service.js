@@ -3,7 +3,7 @@ import { fetchLiveOffers } from "../../server/connectors.js";
 
 const RETAILER = String(process.env.RETAILER ?? "").toLowerCase();
 const FLYER_RETAILERS = new Set(["ins", "conad", "md", "pam", "borello", "crai", "mercato"]);
-if (!["carrefour", "esselunga", "ekom", "coop", "lidl", "tigota", "action", ...FLYER_RETAILERS].includes(RETAILER)) throw new Error("Unsupported RETAILER");
+if (!["carrefour", "esselunga", "ekom", "coop", "lidl", "tigota", "action", "iperbimbo", "prenatal", ...FLYER_RETAILERS].includes(RETAILER)) throw new Error("Unsupported RETAILER");
 const SERVICE = `${RETAILER}-ingestor`;
 const PORT = Number(process.env.PORT ?? 8080);
 const API_URL = process.env.API_URL ?? "http://spesavicina-api";
@@ -46,6 +46,8 @@ function officialFlyerSource(retailer, storeUrl) {
     mercato: /mymercato\.it\/punti-vendita\//i,
     tigota: /tigota\.it\/negozi\//i,
     action: /action\.com\/it-it\/negozi\//i,
+    iperbimbo: /(?:negozi\.)?iperbimbo\.it\//i,
+    prenatal: /prenatal\.com\/(?:store|negozi)/i,
   };
   return patterns[retailer]?.test(storeUrl) ? storeUrl : "";
 }
@@ -66,6 +68,10 @@ async function runIngestion(store = null) {
               ? (process.env.TIGOTA_OFFERS_URL || "https://www.tigota.it/offerte-online")
               : RETAILER === "action"
                 ? (process.env.ACTION_OFFERS_URL || "https://www.action.com/it-it/promozione-settimanale/")
+                : RETAILER === "iperbimbo"
+                  ? (process.env.IPERBIMBO_PRODUCTS_URL || "https://www.iperbimbo.it/products.json?limit=250")
+                  : RETAILER === "prenatal"
+                    ? (process.env.PRENATAL_CATALOG_URL || "https://www.prenatal.com/catalog/")
                 : (officialFlyerSource(RETAILER, store?.sourceUrl) || process.env[`${RETAILER.toUpperCase()}_FLYER_URL`] || "");
   const env = RETAILER === "carrefour"
     ? { CARREFOUR_FLYER_URL: sourceUrl, CARREFOUR_STORE_ID: store?.id ?? process.env.CARREFOUR_STORE_ID }
@@ -81,6 +87,10 @@ async function runIngestion(store = null) {
               ? { TIGOTA_OFFERS_URL: sourceUrl, TIGOTA_STORE_ID: store?.id ?? process.env.TIGOTA_STORE_ID ?? "tigota" }
               : RETAILER === "action"
                 ? { ACTION_OFFERS_URL: sourceUrl, ACTION_STORE_ID: store?.id ?? process.env.ACTION_STORE_ID ?? "action" }
+                : RETAILER === "iperbimbo"
+                  ? { IPERBIMBO_PRODUCTS_URL: sourceUrl, IPERBIMBO_STORE_ID: store?.id ?? process.env.IPERBIMBO_STORE_ID ?? "iperbimbo-italy" }
+                  : RETAILER === "prenatal"
+                    ? { PRENATAL_CATALOG_URL: sourceUrl, PRENATAL_STORE_ID: store?.id ?? process.env.PRENATAL_STORE_ID ?? "prenatal-italy" }
                 : {
                 FLYER_RETAILER: RETAILER,
                 FLYER_SOURCE_URL: sourceUrl,
@@ -106,7 +116,7 @@ async function runIngestion(store = null) {
       diagnostics: result.diagnostics,
       snapshot: { complete: completeSnapshot, retailer: result.offers[0]?.retailer ?? RETAILER, storeIds: [...new Set(result.offers.map((offer) => offer.storeId).filter(Boolean))] },
     }),
-    signal: AbortSignal.timeout(300_000),
+    signal: AbortSignal.timeout(Number(process.env.INGESTION_POST_TIMEOUT_MS ?? 900_000)),
   });
   const saved = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(`API ingestion failed: ${saved.error ?? response.status}`);

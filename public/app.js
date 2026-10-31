@@ -83,12 +83,14 @@ function retailerKey(retailer, preferred = "") {
   if (name.includes("crai")) return "crai";
   if (name.includes("tigotà") || name.includes("tigota")) return "tigota";
   if (/\baction\b/.test(name)) return "action";
+  if (name.includes("iperbimbo")) return "iperbimbo";
+  if (name.includes("prénatal") || name.includes("prenatal")) return "prenatal";
   return "market";
 }
 
 function retailerLogo(retailer, large = false, preferred = "") {
   const key = retailerKey(retailer, preferred);
-  const marks = { carrefour: "C", esselunga: "ES", coop: "COOP", conad: "CONAD", pam: "PAM", ins: "IN'S", ekom: "EK", mercato: "M", borello: "B", lidl: "LIDL", md: "MD", eurospin: "EU", crai: "CR", tigota: "T", action: "A", market: "●" };
+  const marks = { carrefour: "C", esselunga: "ES", coop: "COOP", conad: "CONAD", pam: "PAM", ins: "IN'S", ekom: "EK", mercato: "M", borello: "B", lidl: "LIDL", md: "MD", eurospin: "EU", crai: "CR", tigota: "T", action: "A", iperbimbo: "IB", prenatal: "P", market: "●" };
   const logos = {
     carrefour: "/logo-carrefour.svg",
     esselunga: "/logo-esselunga.svg",
@@ -103,6 +105,8 @@ function retailerLogo(retailer, large = false, preferred = "") {
     mercato: "https://static.mymercato.it/dam/jcr:9788305f-d722-43b0-8187-5664f5ba59a1/Logo=Mercat%C3%B2.svg",
     tigota: "https://www.tigota.it/_next/static/media/tigota.66987120.svg",
     action: "https://www.action.com/favicons/favicon.ico",
+    iperbimbo: "https://www.iperbimbo.it/favicon.ico",
+    prenatal: "https://media.prenatal-it.prenatal-services.com/2023/02/a6c34b4c-cropped-fdc5cba7-pnt-logo-favicon-192x192.jpg",
   };
   const logo = logos[key];
   const logoSrc = logo?.startsWith("https://") ? `/api/product-image?url=${encodeURIComponent(logo)}` : logo;

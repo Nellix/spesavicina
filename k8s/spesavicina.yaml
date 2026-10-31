@@ -64,7 +64,7 @@ data:
   PGSSL_REJECT_UNAUTHORIZED: "false"
   DB_POOL_SIZE: "8"
   API_URL: http://spesavicina
-  INGESTOR_URLS: http://carrefour-ingestor/run,http://esselunga-ingestor/run,http://ekom-ingestor/run,http://coop-ingestor/run,http://lidl-ingestor/run,http://ins-ingestor/run,http://conad-ingestor/run,http://md-ingestor/run,http://pam-ingestor/run,http://borello-ingestor/run,http://crai-ingestor/run,http://mercato-ingestor/run,http://tigota-ingestor/run,http://action-ingestor/run
+  INGESTOR_URLS: http://carrefour-ingestor/run,http://esselunga-ingestor/run,http://ekom-ingestor/run,http://coop-ingestor/run,http://lidl-ingestor/run,http://ins-ingestor/run,http://conad-ingestor/run,http://md-ingestor/run,http://pam-ingestor/run,http://borello-ingestor/run,http://crai-ingestor/run,http://mercato-ingestor/run,http://tigota-ingestor/run,http://action-ingestor/run,http://iperbimbo-ingestor/run,http://prenatal-ingestor/run
   CARREFOUR_INGESTOR_URL: http://carrefour-ingestor
   ESSELUNGA_INGESTOR_URL: http://esselunga-ingestor
   EKOM_INGESTOR_URL: http://ekom-ingestor
@@ -79,8 +79,11 @@ data:
   MERCATO_INGESTOR_URL: http://mercato-ingestor
   TIGOTA_INGESTOR_URL: http://tigota-ingestor
   ACTION_INGESTOR_URL: http://action-ingestor
+  IPERBIMBO_INGESTOR_URL: http://iperbimbo-ingestor
+  PRENATAL_INGESTOR_URL: http://prenatal-ingestor
   OCR_URL: http://ocr-worker
   OCR_REQUEST_TIMEOUT_MS: "900000"
+  INGESTION_POST_TIMEOUT_MS: "900000"
   STORE_ANALYSIS_TIMEOUT_MS: "960000"
   OVERPASS_URL: https://overpass-api.de/api/interpreter
   NOMINATIM_URL: https://nominatim.openstreetmap.org
@@ -109,6 +112,10 @@ data:
   TIGOTA_STORE_ID: tigota-italy
   ACTION_OFFERS_URL: https://www.action.com/it-it/promozione-settimanale/
   ACTION_STORE_ID: action-italy
+  IPERBIMBO_PRODUCTS_URL: https://www.iperbimbo.it/products.json?limit=250
+  IPERBIMBO_STORE_ID: iperbimbo-italy
+  PRENATAL_CATALOG_URL: https://www.prenatal.com/catalog/
+  PRENATAL_STORE_ID: prenatal-italy
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -952,6 +959,64 @@ kind: Service
 metadata: { name: action-ingestor, namespace: grocery-offers }
 spec: { selector: { app.kubernetes.io/name: action-ingestor }, ports: [{ name: http, port: 80, targetPort: http }] }
 ---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: iperbimbo-ingestor, namespace: grocery-offers, labels: { app.kubernetes.io/name: iperbimbo-ingestor, app.kubernetes.io/part-of: spesavicina } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app.kubernetes.io/name: iperbimbo-ingestor } }
+  template:
+    metadata: { labels: { app.kubernetes.io/name: iperbimbo-ingestor, app.kubernetes.io/part-of: spesavicina }, annotations: { spesavicina.dev/revision: "20261031-iperbimbo-prenatal-1" } }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001 }
+      containers:
+        - name: ingestor
+          image: node:22-bookworm-slim
+          command: ["sh", "-c", "gzip -dc /bundle/ingestor.mjs.gz > /work/ingestor.mjs && exec node /work/ingestor.mjs"]
+          ports: [{ name: http, containerPort: 8080 }]
+          envFrom: [{ configMapRef: { name: spesavicina-config } }, { secretRef: { name: spesavicina-service-secrets } }]
+          env: [{ name: RETAILER, value: iperbimbo }]
+          volumeMounts: [{ name: bundle, mountPath: /bundle, readOnly: true }, { name: runtime, mountPath: /work }]
+          readinessProbe: { httpGet: { path: /readyz, port: http }, initialDelaySeconds: 5, periodSeconds: 10 }
+          livenessProbe: { httpGet: { path: /healthz, port: http }, initialDelaySeconds: 15, periodSeconds: 20 }
+          resources: { requests: { cpu: 20m, memory: 64Mi }, limits: { cpu: 400m, memory: 384Mi } }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ["ALL"] } }
+      volumes: [{ name: bundle, configMap: { name: spesavicina-ingestor-bundle } }, { name: runtime, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: iperbimbo-ingestor, namespace: grocery-offers }
+spec: { selector: { app.kubernetes.io/name: iperbimbo-ingestor }, ports: [{ name: http, port: 80, targetPort: http }] }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: prenatal-ingestor, namespace: grocery-offers, labels: { app.kubernetes.io/name: prenatal-ingestor, app.kubernetes.io/part-of: spesavicina } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app.kubernetes.io/name: prenatal-ingestor } }
+  template:
+    metadata: { labels: { app.kubernetes.io/name: prenatal-ingestor, app.kubernetes.io/part-of: spesavicina }, annotations: { spesavicina.dev/revision: "20261031-iperbimbo-prenatal-1" } }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001 }
+      containers:
+        - name: ingestor
+          image: node:22-bookworm-slim
+          command: ["sh", "-c", "gzip -dc /bundle/ingestor.mjs.gz > /work/ingestor.mjs && exec node /work/ingestor.mjs"]
+          ports: [{ name: http, containerPort: 8080 }]
+          envFrom: [{ configMapRef: { name: spesavicina-config } }, { secretRef: { name: spesavicina-service-secrets } }]
+          env: [{ name: RETAILER, value: prenatal }]
+          volumeMounts: [{ name: bundle, mountPath: /bundle, readOnly: true }, { name: runtime, mountPath: /work }]
+          readinessProbe: { httpGet: { path: /readyz, port: http }, initialDelaySeconds: 5, periodSeconds: 10 }
+          livenessProbe: { httpGet: { path: /healthz, port: http }, initialDelaySeconds: 15, periodSeconds: 20 }
+          resources: { requests: { cpu: 20m, memory: 64Mi }, limits: { cpu: 400m, memory: 512Mi } }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ["ALL"] } }
+      volumes: [{ name: bundle, configMap: { name: spesavicina-ingestor-bundle } }, { name: runtime, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: prenatal-ingestor, namespace: grocery-offers }
+spec: { selector: { app.kubernetes.io/name: prenatal-ingestor }, ports: [{ name: http, port: 80, targetPort: http }] }
+---
 apiVersion: batch/v1
 kind: CronJob
 metadata: { name: carrefour-ingestion, namespace: grocery-offers }
@@ -1116,6 +1181,54 @@ spec:
               command: ["node", "-e", "fetch(process.env.TARGET,{method:'POST',headers:{authorization:'Bearer '+process.env.SERVICE_TOKEN}}).then(async r=>{if(!r.ok)throw Error(await r.text());console.log(await r.text())})"]
               env:
                 - { name: TARGET, value: "http://action-ingestor/run" }
+                - name: SERVICE_TOKEN
+                  valueFrom: { secretKeyRef: { name: spesavicina-service-secrets, key: SERVICE_TOKEN } }
+              resources: { requests: { cpu: 5m, memory: 32Mi }, limits: { cpu: 100m, memory: 96Mi } }
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: { name: iperbimbo-ingestion, namespace: grocery-offers }
+spec:
+  schedule: "49 6,18 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: trigger
+              image: node:22-bookworm-slim
+              command: ["node", "-e", "fetch(process.env.TARGET,{method:'POST',headers:{authorization:'Bearer '+process.env.SERVICE_TOKEN}}).then(async r=>{if(!r.ok)throw Error(await r.text());console.log(await r.text())})"]
+              env:
+                - { name: TARGET, value: "http://iperbimbo-ingestor/run" }
+                - name: SERVICE_TOKEN
+                  valueFrom: { secretKeyRef: { name: spesavicina-service-secrets, key: SERVICE_TOKEN } }
+              resources: { requests: { cpu: 5m, memory: 32Mi }, limits: { cpu: 100m, memory: 96Mi } }
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: { name: prenatal-ingestion, namespace: grocery-offers }
+spec:
+  schedule: "11 7,19 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: trigger
+              image: node:22-bookworm-slim
+              command: ["node", "-e", "fetch(process.env.TARGET,{method:'POST',headers:{authorization:'Bearer '+process.env.SERVICE_TOKEN}}).then(async r=>{if(!r.ok)throw Error(await r.text());console.log(await r.text())})"]
+              env:
+                - { name: TARGET, value: "http://prenatal-ingestor/run" }
                 - name: SERVICE_TOKEN
                   valueFrom: { secretKeyRef: { name: spesavicina-service-secrets, key: SERVICE_TOKEN } }
               resources: { requests: { cpu: 5m, memory: 32Mi }, limits: { cpu: 100m, memory: 96Mi } }

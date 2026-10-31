@@ -187,11 +187,19 @@ async function ingestionContext(client) {
     `),
     client.query(`SELECT scheme,retailer,value,product_id FROM product_identifiers`),
   ]);
+  const catalogue = products.rows.map((row) => ({
+    id: row.id, brand: row.brand, productName: row.product_name, variant: row.variant,
+    packSize: row.pack_size, category: row.category, aliases: row.aliases ?? [], activeOfferCount: 0,
+  }));
+  const productsByBrand = new Map();
+  for (const product of catalogue) {
+    const key = normalize(product.brand);
+    if (!productsByBrand.has(key)) productsByBrand.set(key, []);
+    productsByBrand.get(key).push(product);
+  }
   return {
-    products: products.rows.map((row) => ({
-      id: row.id, brand: row.brand, productName: row.product_name, variant: row.variant,
-      packSize: row.pack_size, category: row.category, aliases: row.aliases ?? [], activeOfferCount: 0,
-    })),
+    products: catalogue,
+    productsByBrand,
     identifiers: new Map(identifiers.rows.map((row) => [identifierKey(row), row.product_id])),
   };
 }
@@ -214,7 +222,7 @@ async function resolveProduct(client, offer, allowCreate, context = null) {
   if (!allowCreate) return null;
   const query = `${offer.brand} ${offer.productName} ${offer.variant ?? ""} ${offer.packSize ?? ""}`;
   const candidates = context
-    ? context.products.map((product) => ({ product, score: productSearchScore(query, product) }))
+    ? (context.productsByBrand.get(normalize(offer.brand)) ?? []).map((product) => ({ product, score: productSearchScore(query, product) }))
       .filter((item) => item.score > 0)
       .sort((left, right) => right.score - left.score)
       .slice(0, 4)
@@ -225,7 +233,12 @@ async function resolveProduct(client, offer, allowCreate, context = null) {
   const id = slug(`${offer.brand}-${offer.productName}-${offer.variant ?? ""}-${offer.packSize ?? ""}`);
   const product = { id, brand: offer.brand, productName: offer.productName, variant: offer.variant ?? "", packSize: offer.packSize ?? "", category: "Other", aliases: [], activeOfferCount: 0 };
   await upsertProduct(client, product);
-  if (context && !context.products.some((item) => item.id === id)) context.products.push(product);
+  if (context && !context.products.some((item) => item.id === id)) {
+    context.products.push(product);
+    const brandKey = normalize(product.brand);
+    if (!context.productsByBrand.has(brandKey)) context.productsByBrand.set(brandKey, []);
+    context.productsByBrand.get(brandKey).push(product);
+  }
   return id;
 }
 

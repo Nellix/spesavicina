@@ -150,6 +150,10 @@ const KNOWN_BRANDS = [
   "Crai", "Vicenzi", "Twix", "Mars", "Snickers", "Haribo", "Fini", "Paneangeli", "Caputo", "Lindt",
   "Rigoni di Asiago", "Balocco", "Loacker", "San Carlo", "Pernigotti", "Ace", "Vileda", "Pedigree",
   "Morando", "Purina", "Whiskas", "Gourmet",
+  "Chicco", "Pampers", "Huggies", "Plasmon", "Mellin", "Mustela", "Cybex", "Inglesina",
+  "Peg Perego", "Stokke", "Maxi-Cosi", "Joie", "Foppapedretti", "Kinderkraft", "Cam", "Suavinex",
+  "MAM", "Avent", "Nuk", "Béaba", "Medela", "BabyBjörn", "Britax Römer", "Giordani", "Prénatal",
+  "Prenatal", "Graco", "Jané", "Aptamil", "Hipp", "Humana", "Nipiol", "Braun", "Aptica",
 ];
 
 const STRUCTURED_BRAND_PREFIXES = [
@@ -346,6 +350,45 @@ export function parseActionPage(html, storeId = "action", sourceUrl = "", now = 
   }
   const pageNumbers = [...String(html).matchAll(/[?&]page=(\d+)/g)].map((match) => Number(match[1])).filter(Number.isFinite);
   return { offers, totalPages: Math.max(1, ...pageNumbers) };
+}
+
+export function parseIperbimboProducts(payload, storeId = "iperbimbo-italy", sourceUrl = "https://www.iperbimbo.it/products.json") {
+  const offers = [];
+  const products = Array.isArray(payload?.products) ? payload.products : [];
+  for (const product of products) {
+    const productName = normalizedText(product.title);
+    const brand = normalizedText(product.vendor) || inferStructuredBrand(productName);
+    if (!product?.id || !productName || !brand) continue;
+    for (const variant of product.variants ?? []) {
+      const price = Number(variant.price);
+      const listPrice = Number(variant.compare_at_price);
+      if (!variant?.id || variant.available === false || !Number.isFinite(price) || price <= 0 || !Number.isFinite(listPrice) || listPrice <= price) continue;
+      const variantName = normalizedText(variant.title);
+      const imageUrl = variant.featured_image?.src ?? product.image?.src ?? product.images?.[0]?.src ?? "";
+      const productUrl = product.handle ? new URL(`/products/${product.handle}`, sourceUrl).href : sourceUrl;
+      offers.push({
+        sourceId: `iperbimbo-${slug(storeId)}-${product.id}-${variant.id}`,
+        retailer: "Iperbimbo",
+        storeId,
+        productName,
+        brand,
+        variant: /^default title$/i.test(variantName) ? "" : variantName,
+        packSize: packFromTitle(`${productName} ${variantName}`),
+        price,
+        listPrice,
+        unitPrice: "",
+        condition: "Online promotion; prices and availability may differ by physical store",
+        validFrom: null,
+        validUntil: null,
+        sourceUrl: productUrl,
+        identifiers: [{ scheme: "retailer_sku", retailer: "Iperbimbo", value: String(variant.sku || variant.id) }],
+        sourceEvidence: { imageUrl, parser: "iperbimbo-shopify-v1", sourceScope: "online-promotion" },
+        confidence: 0.98,
+        status: "approved",
+      });
+    }
+  }
+  return offers;
 }
 
 export function parseEsselungaApi(payload, storeId = "esselunga-porta-nuova", sourceUrl = "") {
@@ -553,6 +596,7 @@ const FLYER_RETAILERS = {
   borello: "Borello",
   crai: "Crai",
   mercato: "Mercatò",
+  prenatal: "Prénatal",
 };
 
 function decodeAttribute(value = "") {
@@ -615,9 +659,40 @@ export function discoverOfficialFlyer(html, retailer, pageUrl = "") {
   return null;
 }
 
+export function discoverPrenatalViewer(html, pageUrl = "https://www.prenatal.com/catalog/") {
+  const source = decodeAttribute(html);
+  const href = source.match(/href=["'](https?:\/\/catalogo\.prenatal\.com\/[^"']+)["']/i)?.[1]
+    ?? source.match(/(https?:\/\/catalogo\.prenatal\.com\/[a-z0-9_/-]+)/i)?.[1];
+  return href ? new URL(href, pageUrl).href : null;
+}
+
+export function discoverPrenatalPdf(html, viewerUrl = "") {
+  const source = decodeAttribute(html);
+  const encoded = source.match(/["']downloadPdfUrl["']\s*:\s*["']([^"']+)["']/i)?.[1]
+    ?? source.match(/(https?:\/\/[^"'<>\s]+\.pdf(?:\?[^"'<>\s]*)?)/i)?.[1];
+  return encoded ? new URL(decodeAttribute(encoded), viewerUrl || "https://catalogo.prenatal.com/").href : null;
+}
+
+export function italianFlyerValidity(text, now = new Date()) {
+  const months = { gennaio: 1, febbraio: 2, marzo: 3, aprile: 4, maggio: 5, giugno: 6, luglio: 7, agosto: 8, settembre: 9, ottobre: 10, novembre: 11, dicembre: 12 };
+  const match = normalizedText(text).match(/(?:valido\s+)?dall?[’'\s]*(\d{1,2})\s+([a-zà]+)\s+al\s+(\d{1,2})\s+([a-zà]+)/i);
+  if (!match) return { validFrom: null, validUntil: null };
+  const startMonth = months[match[2].toLocaleLowerCase("it")];
+  const endMonth = months[match[4].toLocaleLowerCase("it")];
+  if (!startMonth || !endMonth) return { validFrom: null, validUntil: null };
+  let startYear = now.getUTCFullYear();
+  const currentMonth = now.getUTCMonth() + 1;
+  if (startMonth - currentMonth > 6) startYear -= 1;
+  if (currentMonth - startMonth > 6) startYear += 1;
+  const endYear = startYear + (endMonth < startMonth ? 1 : 0);
+  const format = (year, month, day) => `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  return { validFrom: format(startYear, startMonth, Number(match[1])), validUntil: format(endYear, endMonth, Number(match[3])) };
+}
+
 export function parseOfficialFlyerText(text, retailer, storeId, sourceUrl = "", validity = {}) {
   const key = String(retailer).toLowerCase();
   const retailerName = FLYER_RETAILERS[key] ?? retailer;
+  const pricePattern = key === "prenatal" ? /(?:€\s*)?(\d{1,4}[,.]\d{2})(?!\d)(?:\s*€)?/g : /(?:€\s*)?(\d{1,2}[,.]\d{2})(?!\d)(?:\s*€)?/g;
   const lines = String(text).split(/\r?\n/).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
   const offers = [];
   const seen = new Set();
@@ -627,7 +702,7 @@ export function parseOfficialFlyerText(text, retailer, storeId, sourceUrl = "", 
     const selected = [];
     for (let offset = 1; offset <= 7; offset += 1) {
       const candidate = lines[from + direction * offset];
-      if (!candidate || /(?:€\s*)?\d{1,2}[,.]\d{2}(?!\d)(?:\s*€)?/.test(candidate)) break;
+      if (!candidate || /(?:€\s*)?\d{1,4}[,.]\d{2}(?!\d)(?:\s*€)?/.test(candidate)) break;
       if (noise.test(candidate) || metadata.test(candidate)) continue;
       direction < 0 ? selected.unshift(candidate) : selected.push(candidate);
     }
@@ -636,10 +711,10 @@ export function parseOfficialFlyerText(text, retailer, storeId, sourceUrl = "", 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
     if (/€?\s*\/(?:kg|l|lt|etto)\b|\bal\s+(?:kg|l|lt|etto)\b/i.test(line)) continue;
-    const priceMatches = [...line.matchAll(/(?:€\s*)?(\d{1,2}[,.]\d{2})(?!\d)(?:\s*€)?/g)];
+    const priceMatches = [...line.matchAll(pricePattern)];
     for (const priceMatch of priceMatches) {
       const price = parseEuropeanPrice(priceMatch[1]);
-      if (price === null || price <= 0 || price > 100) continue;
+      if (price === null || price <= 0 || price > (key === "prenatal" ? 3000 : 100)) continue;
       const direct = normalizedText(line.slice(0, priceMatch.index).replace(/[-–•|]+$/g, ""));
       const backward = candidateWindow(index, -1);
       const forward = candidateWindow(index, 1);
@@ -857,6 +932,75 @@ export async function fetchLiveOffers(env = process.env) {
         }
       }));
       diagnostics.push({ retailer: "Action", count: results.length, sourceUrl: env.ACTION_OFFERS_URL, parser: "structured-weekly-promotions", pages: first.totalPages, ...(results.length ? {} : { status: "no_searchable_products" }) });
+    }
+  }
+
+  if (env.IPERBIMBO_PRODUCTS_URL) {
+    const headers = { "user-agent": "SpesaVicina/1.0 (+local grocery offer pilot)", accept: "application/json" };
+    const offers = [];
+    let page = 1;
+    let restricted = false;
+    while (page <= 20) {
+      const pageUrl = new URL(env.IPERBIMBO_PRODUCTS_URL);
+      if (!pageUrl.searchParams.has("limit")) pageUrl.searchParams.set("limit", "250");
+      pageUrl.searchParams.set("page", String(page));
+      const response = await fetch(pageUrl, { headers, signal: AbortSignal.timeout(30_000) });
+      if ([401, 403, 429].includes(response.status)) { restricted = true; break; }
+      if (!response.ok) throw new Error(`Iperbimbo products page ${page} returned ${response.status}`);
+      const payload = await response.json();
+      const products = Array.isArray(payload?.products) ? payload.products : [];
+      offers.push(...parseIperbimboProducts(payload, env.IPERBIMBO_STORE_ID ?? "iperbimbo-italy", pageUrl.href));
+      if (products.length < Number(pageUrl.searchParams.get("limit"))) break;
+      page += 1;
+    }
+    results.push(...offers);
+    diagnostics.push({
+      retailer: "Iperbimbo",
+      count: offers.length,
+      sourceUrl: env.IPERBIMBO_PRODUCTS_URL,
+      parser: "shopify-products",
+      pages: page,
+      ...(restricted ? { status: "source_access_restricted" } : offers.length ? {} : { status: "no_searchable_products" }),
+    });
+  }
+
+  if (env.PRENATAL_CATALOG_URL) {
+    const headers = { "user-agent": "SpesaVicina/1.0 (+local grocery offer pilot)", accept: "text/html,application/xhtml+xml" };
+    const catalogResponse = await fetch(env.PRENATAL_CATALOG_URL, { headers, signal: AbortSignal.timeout(30_000) });
+    if (!catalogResponse.ok) throw new Error(`Prénatal catalogue page returned ${catalogResponse.status}`);
+    const viewerUrl = discoverPrenatalViewer(await catalogResponse.text(), env.PRENATAL_CATALOG_URL);
+    if (!viewerUrl) {
+      diagnostics.push({ retailer: "Prénatal", count: 0, status: "no_current_flyer", sourceUrl: env.PRENATAL_CATALOG_URL });
+    } else {
+      const viewerResponse = await fetch(viewerUrl, { headers, signal: AbortSignal.timeout(30_000) });
+      if (!viewerResponse.ok) throw new Error(`Prénatal flyer viewer returned ${viewerResponse.status}`);
+      const pdfUrl = discoverPrenatalPdf(await viewerResponse.text(), viewerUrl);
+      if (!pdfUrl) {
+        diagnostics.push({ retailer: "Prénatal", count: 0, status: "no_current_flyer", sourceUrl: viewerUrl });
+      } else {
+        const pdfResponse = await fetch(pdfUrl, { headers, signal: AbortSignal.timeout(90_000) });
+        if (!pdfResponse.ok) throw new Error(`Prénatal flyer PDF returned ${pdfResponse.status}`);
+        const pdfBuffer = Buffer.from(await pdfResponse.arrayBuffer());
+        const text = await pdfToText(pdfBuffer);
+        const flyer = { pdfUrl, title: "Prénatal current catalogue", ...italianFlyerValidity(text) };
+        let offers = parseOfficialFlyerText(text, "prenatal", env.PRENATAL_STORE_ID ?? "prenatal-italy", pdfUrl, flyer);
+        let ocr = null;
+        if (!offers.length && env.OCR_URL) {
+          ocr = await ocrPdf(pdfBuffer, env);
+          offers = reviewOcrOffers(parseOfficialFlyerText(ocrOfferText(ocr.text), "prenatal", env.PRENATAL_STORE_ID ?? "prenatal-italy", pdfUrl, flyer), ocr);
+        }
+        results.push(...offers);
+        diagnostics.push({
+          retailer: "Prénatal",
+          count: offers.length,
+          sourceUrl: pdfUrl,
+          viewerUrl,
+          parser: ocr ? "official-flyer-ocr" : "official-flyer-text",
+          validFrom: flyer.validFrom,
+          validUntil: flyer.validUntil,
+          ...(offers.length ? {} : { status: ocr ? "ocr_no_searchable_products" : (text.trim() ? "no_searchable_products" : "image_only_flyer") }),
+        });
+      }
     }
   }
 
